@@ -12,10 +12,12 @@ import { addFirmware, detect } from "./lib/addfw.js";
 import { readMeta, setMeta, setImage, imagePath, importRemoteFM1, SCHEMA_MD } from "./lib/meta.js";
 import { readReadme, saveReadme, refreshReadme } from "./lib/readme.js";
 import { collectFiles, stage, readPreview, publish } from "./lib/publish.js";
+import { siteStatus, refreshSite, siteFile } from "./lib/site.js";
 
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json", ".md": "text/plain; charset=utf-8",
-  ".txt": "text/plain; charset=utf-8", ".log": "text/plain; charset=utf-8", ".wav": "audio/wav", ".svg": "image/svg+xml" };
+  ".txt": "text/plain; charset=utf-8", ".log": "text/plain; charset=utf-8", ".wav": "audio/wav", ".svg": "image/svg+xml",
+  ".mjs": "text/javascript; charset=utf-8", ".wasm": "application/wasm", ".rfm1": "application/wasm", ".woff": "font/woff", ".woff2": "font/woff2" };
 
 const send = (res, code, body, type = "application/json") => {
   const b = typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body, null, 1);
@@ -129,6 +131,33 @@ route("POST", /^\/api\/publish$/, async (req) => {
   if (!dryRun && (a.confirm !== a.tag || !a.tag)) throw Object.assign(new Error("type the tag to confirm a real publish"), { status: 400 });
   const j = startJob("publish", `publish-${dryRun ? "dryrun-" : ""}${a.tag}`, (job) => publish({ ...a, dryRun, log: job.log }), { exclusive: true });
   return view(j);
+});
+
+// "Test in RemoteFM1": the site's copy (lib/site.js) at /rfm1/, the manager's .rfm1 files at /files/
+route("GET", /^\/favicon\.ico$/, (req, q, m, res) => { res.writeHead(204); res.end(); });
+route("GET", /^\/api\/site$/, () => siteStatus());
+route("POST", /^\/api\/site\/refresh$/, () => refreshSite());
+route("GET", /^\/rfm1\/(.*)$/, async (req, q, [, rest], res) => {
+  const f = await siteFile(decodeURIComponent(rest));
+  if (!f) return send(res, 404, "not found", "text/plain");
+  send(res, 200, f.body, MIME[extname(f.path)] || "application/octet-stream");
+});
+const RFM1_NAME = /^[A-Za-z0-9_][A-Za-z0-9._+-]*\.rfm1$/, TAG_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+route("GET", /^\/files\/(out|release|staging)\/(?:([^/]+)\/)?([^/]+)$/, (req, q, [, where, tag, name], res) => {
+  if (!RFM1_NAME.test(name) || (where === "out") !== !tag || (tag && !TAG_NAME.test(tag))) throw Object.assign(new Error("not found"), { status: 404 });
+  const p = where === "out" ? join(cfg.out, name) : where === "release" ? join(cfg.cache, "release", tag, name) : join(cfg.staging, tag, name);
+  if (!existsSync(p)) throw Object.assign(new Error("not found"), { status: 404 });
+  send(res, 200, readFileSync(p), "application/wasm");
+});
+// the page for one id: its newest built file in out/, else the latest release's (the files a stage would release)
+const siteUrl = (file, id) => `/rfm1/site/?rfm1=${encodeURIComponent(file)}&rfm1id=${encodeURIComponent(id)}`;
+route("GET", /^\/rfm1m\/open\/([a-z0-9_]+)$/, async (req, q, [, id], res) => {
+  const { rel, files } = await collectFiles();
+  const f = files.find((x) => x.id === id);
+  if (!f) throw Object.assign(new Error(`no .rfm1 for ${id} in out/ or release ${rel.tag}`), { status: 404 });
+  const file = f.origin === "built" ? `/files/out/${f.file}` : `/files/release/${rel.tag}/${f.file}`;
+  res.writeHead(302, { Location: siteUrl(file, id), "Cache-Control": "no-store" });
+  res.end();
 });
 
 const server = createServer(async (req, res) => {

@@ -10,6 +10,9 @@ async function api(path, opts = {}) {
   if (!r.ok) throw new Error(v.error || v);
   return v;
 }
+// "Test in RemoteFM1": the manager's copy of the site with this file loaded (lib/site.js, public/rfm1m/loader.js)
+const testUrl = (file, id) => `/rfm1/site/?rfm1=${encodeURIComponent(file)}&rfm1id=${encodeURIComponent(id)}`;
+const testLink = (href, text = "Test in RemoteFM1") => `<a class="btn" href="${esc(href)}" target="_blank" rel="noopener">${esc(text)}</a>`;
 const fmtSize = (n) => n == null ? "" : n > 1e6 ? (n / 1048576).toFixed(2) + " MiB" : (n / 1024).toFixed(0) + " KiB";
 
 // tabs
@@ -45,7 +48,7 @@ function renderCatalog(up) {
       <td>${esc(f.glue?.version || (f.glue?.versionFile ? "file" : ""))}</td>
       <td><code>${esc((f.glue?.pin || "").slice(0, 7))}</code>${pinOk}</td>
       <td>${upCell}</td><td>${flag}</td>
-      <td>${f.glue?.rfm1 ? `<button data-b="${esc(f.id)}">Rebuild</button> <button data-u="${esc(f.id)}"${up && !f.updateAvailable ? " disabled" : ""}>Update + build</button>` : '<span class="mut">no fm1_add_rfm1</span>'}</td></tr>`;
+      <td>${f.releaseFile || f.glue?.rfm1 ? testLink(`/rfm1m/open/${f.id}`) + " " : ""}${f.glue?.rfm1 ? `<button data-b="${esc(f.id)}">Rebuild</button> <button data-u="${esc(f.id)}"${up && !f.updateAvailable ? " disabled" : ""}>Update + build</button>` : '<span class="mut">no fm1_add_rfm1</span>'}</td></tr>`;
   }).join("");
   tb.querySelectorAll("button[data-b]").forEach((b) => b.onclick = () => startBuild(b.dataset.b, false));
   tb.querySelectorAll("button[data-u]").forEach((b) => b.onclick = () => startBuild(b.dataset.u, true));
@@ -54,6 +57,18 @@ async function startBuild(id, update) {
   try { const j = await api("/api/build", { method: "POST", body: { id, update } }); openJobTab(j.id); }
   catch (e) { alert(e.message); }
 }
+async function loadSite() {
+  try {
+    const s = await api("/api/site");
+    $("#site-info").innerHTML = s.commit ? `site <code>${esc(s.commit.slice(0, 7))}</code> ${esc(s.subject || "")}${s.current ? "" : ` <span class="warn">origin/main is ${esc((s.originMain || "?").slice(0, 7))}: refresh</span>`}` : '<span class="mut">site not exported yet (the first test exports it)</span>';
+  } catch (e) { $("#site-info").textContent = e.message; }
+}
+$("#site-refresh").onclick = async () => {
+  $("#site-info").textContent = "fetching RemoteFM1 origin/main…";
+  try { await api("/api/site/refresh", { method: "POST" }); } catch (e) { alert(e.message); }
+  loadSite();
+};
+loadSite();
 $("#cat-load").onclick = () => loadCatalog(false, true);
 $("#cat-up").onclick = () => loadCatalog(true, true);
 $("#cat-update-all").onclick = async () => {
@@ -88,6 +103,8 @@ async function watchJob(id) {
         .map((f) => `<a href="#" data-bf="${esc(name)}/${f}">${f}</a>`).join(" · ");
       $("#view-files").querySelectorAll("a").forEach((a) => a.onclick = (e) => { e.preventDefault(); if (follow) clearTimeout(follow); showFile(a.dataset.bf); });
     }
+    const out = j.result?.out?.split("/").pop();
+    if (out && j.result.manifest?.id) $("#view-files").insertAdjacentHTML("beforeend", " " + testLink(testUrl(`/files/out/${out}`, j.result.manifest.id)));
     if (j.status === "running") follow = setTimeout(tick, 1200); else { follow = null; loadJobs(); if (j.type === "build" && CAT) loadCatalog(false); }
   };
   tick();
@@ -98,6 +115,10 @@ async function showBundle(name) {
   const l = logs.find((x) => x.name === name);
   $("#view-files").innerHTML = l.files.map((f) => `<a href="#" data-bf="${esc(name)}/${esc(f)}">${esc(f)}</a>`).join(" · ");
   $("#view-files").querySelectorAll("a").forEach((a) => a.onclick = (e) => { e.preventDefault(); showFile(a.dataset.bf); });
+  if (l.files.includes("result.json")) api(`/api/logs/${name}/result.json`).then((r) => {
+    const out = r.out?.split("/").pop();
+    if (out && r.manifest?.id) $("#view-files").insertAdjacentHTML("beforeend", " " + testLink(testUrl(`/files/out/${out}`, r.manifest.id)));
+  }).catch(() => {});
   showFile(`${name}/${l.files.includes("SUMMARY-FOR-LLM.md") ? "SUMMARY-FOR-LLM.md" : "build.log"}`);
 }
 async function showFile(p) {
@@ -133,7 +154,7 @@ async function loadMeta() {
       <label class="mut">description (shown in RemoteFM1 when selected)<textarea data-k="what" rows="5">${esc(e.what || "")}</textarea></label>
       ${F.map((k) => `<label class="mut">${L[k] || k} <input data-k="${k}" value="${esc(e[k] || "")}"></label>`).join("")}
       <label class="mut"><input type="checkbox" data-k="beta"${e.beta ? " checked" : ""}> beta</label>
-      <div class="bar"><button data-save>Save</button><span class="mut" data-msg></span></div></div>`;
+      <div class="bar"><button data-save>Save</button>${testLink(`/rfm1m/open/${f.id}`, "Capture from RemoteFM1")}<span class="mut" data-msg></span></div></div>`;
   }).join("");
   $("#meta-list").querySelectorAll(".card").forEach((c) => {
     const id = c.dataset.id, msg = c.querySelector("[data-msg]");
@@ -191,7 +212,7 @@ $("#pb-stage").onclick = async () => {
     $("#pb-prev").innerHTML = `<h2>Preview: ${esc(PV.tag)} on ${esc(PV.repo)} (previous ${esc(PV.previous)}) — ${PV.files.length} files, ${fmtSize(total)}</h2>
       ${PV.problems.length ? `<div class="danger"><b class="bad">Problems (publish is blocked):</b><ul>${PV.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>` : '<p class="ok">No problems found.</p>'}
       <table><thead><tr><th>File</th><th>Size</th><th>SHA-256</th><th>From</th><th>Licence</th><th>Source</th><th></th></tr></thead><tbody>
-      ${PV.files.map((f) => `<tr><td><code>${esc(f.file)}</code>${f.hosted ? ' <span class="pill warn">hosted only</span>' : ""}</td><td>${fmtSize(f.size)}</td><td><code>${esc(f.sha256)}</code></td><td>${esc(f.origin)}</td><td>${esc(f.license)} (${f.licenses} texts)</td><td><code>${esc(f.source_url)}</code></td><td>${f.changed ? '<span class="pill warn">new/changed</span>' : ""}</td></tr>`).join("")}
+      ${PV.files.map((f) => `<tr><td><code>${esc(f.file)}</code>${f.hosted ? ' <span class="pill warn">hosted only</span>' : ""}</td><td>${fmtSize(f.size)}</td><td><code>${esc(f.sha256)}</code></td><td>${esc(f.origin)}</td><td>${esc(f.license)} (${f.licenses} texts)</td><td><code>${esc(f.source_url)}</code></td><td>${f.changed ? '<span class="pill warn">new/changed</span>' : ""} ${testLink(testUrl(`/files/staging/${PV.tag}/${f.file}`, f.id), "Test")}</td></tr>`).join("")}
       </tbody></table><h2>SHA256SUMS</h2><pre>${esc(PV.sums)}</pre><h2>Release notes</h2><pre>${esc(PV.notes)}</pre>
       <p class="mut">README ${PV.readmeChanged ? "will change (staging/" + esc(PV.tag) + "/README.preview.md)" : "unchanged"}. Staged in <code>${esc(PV.dir)}</code>.</p>`;
     $("#pb-out").textContent = "";

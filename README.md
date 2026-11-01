@@ -28,6 +28,7 @@ Optional `config.json` (or `RFM1M_CONFIG=/path/config.json`; `RFM1M_PORT` overri
 | `baseBranch` | `rfm1-melodee` (the newest catalog branch; the manager branch starts from it) |
 | `branch`, `worktree` | `rfm1-manager`, `FM1VST/.claude/worktrees/rfm1-manager` |
 | `fwRepo`, `ghRepo` | `../RemoteFM1FW`, `Quixotic7/RemoteFM1FW` |
+| `remotefm1` | `../RemoteFM1` (the site's source for Test in RemoteFM1: only `git fetch`ed and `git archive`d) |
 | `emcc`, `basePython`, `venv`, `jobs` | `/opt/homebrew/bin/emcc`, `/opt/homebrew/bin/python3.12`, `.venv`, `8` |
 
 ## Where things live
@@ -36,6 +37,7 @@ Optional `config.json` (or `RFM1M_CONFIG=/path/config.json`; `RFM1M_PORT` overri
 | --- | --- |
 | `server.js`, `lib/*.js`, `public/` | the server, its modules, the page |
 | `cache/` | the latest release's metadata and its assets (`cache/release/<tag>/`), GitHub trees for detection |
+| `cache/site-<commit>/web/` | the RemoteFM1 site exported from `origin/main` (`cache/site.json` names the one served) |
 | `out/` | `.rfm1` files built OK in the manager worktree: release candidates (they replace the release's file of the same id when staging) |
 | `logs/<timestamp>-<label>/` | one bundle per build / add / publish job |
 | `staging/<tag>/`, `staging/<tag>.preview.json` | a staged release and its preview |
@@ -149,6 +151,29 @@ box only for a preview without problems, enables the button only when the typed 
 more), no problems, RemoteFM1FW on `main`; it then commits README + catalog, pushes (big `http.postBuffer`), and runs
 `gh release create`.
 
+### 8. Test in RemoteFM1 + thumbnail capture
+The manager serves its own copy of the RemoteFM1 site (remotefm1.com can't load files from localhost): `origin/main`
+of the RemoteFM1 repo (`git fetch origin main`, then `git archive` of `web/site`, `web/engines`, `web/remote` into
+`cache/site-<commit>/`; the repo, its working tree and worktrees are never touched). It is served at `/rfm1/` in the
+site's dev layout (the page at `/rfm1/site/`, its committed `catalog.json`'s `../engines/…` beside it; no build step,
+no COOP/COEP needed: the `.rfm1` engine uses no SharedArrayBuffer). **Refresh site** (Catalog tab, `POST
+/api/site/refresh`) re-exports when `origin/main` moved; `GET /api/site` says which commit is served. The first test
+exports it if nothing is.
+
+The served `index.html` loads `public/rfm1m/loader.js` in place of `js/main.js` (a rewrite of the response; nothing on
+disk is edited): with `?rfm1=<file>&rfm1id=<id>` it fetches the file, checks it with the site's own
+`engines/rfm1/engine.js` `inspect()`, adds it to the site's library (`js/library.js`, IndexedDB: "Your firmware"),
+makes it the last-opened firmware (the site's prefs) and then starts the site, which opens it. The manager's earlier
+file of the same id is removed from that library. Files: `/files/out/<file>`, `/files/release/<tag>/<file>`,
+`/files/staging/<tag>/<file>`. Links (new tab): **Test in RemoteFM1** on each Catalog row (`/rfm1m/open/<id>`: the
+newest built file in `out/`, else the latest release's), on a finished build's job / bundle view (its `out/` file), and
+**Test** per staged file in the publish preview.
+
+The loader also adds a floating **Capture thumbnail** box: it grabs the live 240×240 LCD frame (the site's
+`FM1Site.screen()`, RGB565, exactly the LCD like the iOS app's thumbnails), shows it, and **Use as thumbnail** POSTs
+the PNG to `/api/meta/<id>/image` (the running firmware's manifest id), asking first when the id already has an image.
+Each Metadata card has **Capture from RemoteFM1** (the same page for that id).
+
 ## Owner rules the app enforces
 
 - Upstream **stable releases only** (rc/beta/alpha/pre/dev tags and GitHub prereleases are never offered or pinned).
@@ -165,6 +190,10 @@ more), no problems, RemoteFM1FW on `main`; it then commits README + catalog, pus
 - The pin bump edits a literal `VERSION`; glue that encodes the version elsewhere (or needs new sources for a new
   upstream release) needs a hand edit: the bundle says where.
 - Scaffolds are a starting point: unit and descriptor files copied from another core usually need work.
+
+- Test in RemoteFM1: sound starts with a click on the page (Play); there is no LCD frame to capture before it runs.
+  The site's hosted managers (`build/managers/index.json`, 404) and the native / emulated engines' wasm (`web/build`)
+  are not in the export: the Editor button shows links only, and catalog firmwares other than `.rfm1` files may not run.
 
 ## Start from Finder
 
