@@ -29,6 +29,7 @@ Optional `config.json` (or `RFM1M_CONFIG=/path/config.json`; `RFM1M_PORT` overri
 | `branch`, `worktree` | `rfm1-manager`, `FM1VST/.claude/worktrees/rfm1-manager` |
 | `fwRepo`, `ghRepo` | `../RemoteFM1FW`, `Quixotic7/RemoteFM1FW` |
 | `remotefm1` | `../RemoteFM1` (the site's source for Test in RemoteFM1: only `git fetch`ed and `git archive`d) |
+| `hubUrl`, `rfm1Feed` | `https://thefirmwarehub.com/catalog.json`, `https://remotefm1.com/catalog.json` (the hub's fallback) |
 | `emcc`, `basePython`, `venv`, `jobs` | `/opt/homebrew/bin/emcc`, `/opt/homebrew/bin/python3.12`, `.venv`, `8` |
 
 ## Where things live
@@ -58,8 +59,27 @@ once into `cache/` and each manifest read from its `rfm1` custom section), the R
 glue version, licence, `GATED`, `HOSTED_DESPITE_GATE`, `AUTHORS`, the submodule from `.gitmodules` and its pinned
 commit from the tree). "Check upstream" asks GitHub for each repository's latest **stable** release
 (`releases`, not draft / prerelease, tag `[name-]vX.Y[.Z]` without rc/beta/alpha/pre/dev/...; falling back to tags with
-the same rule) and its commit, and flags **update available** when it is newer than the glue's version and not the pin.
-`GET /api/upstream/<id>` does one.
+the same rule) and its commit, and the **firmware hub** (below); it flags **update available** (with its source: "GitHub
+release" / "GitHub tag" / "hub release") when one is newer than the glue's version and not the pin.
+`GET /api/upstream/<id>` does GitHub for one.
+
+#### Firmware hub (second update source)
+Some authors publish only through the FM-1 Firmware Hub (e.g. JIANT: no GitHub releases or tags). `lib/hub.js` reads
+the hub's own catalog, `https://thefirmwarehub.com/catalog.json` (the file RemoteFM1's Pages build and `fm1-native.sh`
+read; config `hubUrl`), falling back to RemoteFM1's `https://remotefm1.com/catalog.json` (`rfm1Feed`, the same
+`firmwares[]` fields) and then to the last cached copy (`cache/hub.json`, 10 minutes). An entry is matched by manifest
+id (and repo), else by repository slug when exactly one hub entry has that repo. It is used only when:
+- `beta` is false and its version is a plain number once a trailing commit (`-f46764d`) / `+build` and a leading `V`
+  are dropped (`V10.9-f46764d` -> `10.9`; the author's numbering kept); anything with rc/beta/alpha/pre/dev/test/... or
+  another suffix is ignored;
+- its `source` is `https://github.com/<the glue's own repo>/tree/<sha or tag>` (`srcref` when it is a full SHA); a
+  branch (`tree/main`) is never used; the ref is resolved to the full commit with the GitHub API (a short SHA must
+  prefix it), and the build fetches that commit from `.gitmodules`' URL (so it must exist in the repository);
+- **and** either GitHub has no stable release/tag newer than the current version, or the hub's version is newer than
+  GitHub's latest stable one (a hub release at GitHub's own commit stays a GitHub release).
+The bump then pins that exact commit (the manifest's `source_url` is `<repo>@<full sha>`), the header comment's
+"`<ver> (<sha7>, https://github.com/<repo>`" is rewritten, and the commit message, the job log and
+`SUMMARY-FOR-LLM.md` name the source: `jiant: 0.9.9 -> 10.9 (juanjiant-bit/JIANT f46764d, firmware hub non-beta release)`.
 
 ### 2. Update + build
 `POST /api/build {id, update}` (one firmware) or `POST /api/build-all {update, ids?}` (with `update`: those with an
@@ -187,7 +207,8 @@ Each Metadata card has **Capture from RemoteFM1** (the same page for that id).
 
 ## Owner rules the app enforces
 
-- Upstream **stable releases only** (rc/beta/alpha/pre/dev tags and GitHub prereleases are never offered or pinned).
+- Upstream **stable releases only** (rc/beta/alpha/pre/dev tags, GitHub prereleases and hub entries marked `beta` are
+  never offered or pinned); the firmware hub only as described under "Firmware hub".
 - `HOSTED_DESPITE_GATE` cores (SLOOP, Clipper, KARMA, X0X) are built with `FM1_PUBLIC_BUILD=OFF`, as their glue says,
   shown "hosted only", and stay † in the README; gated cores without it are refused.
 - No raw `.syx` / preset sources in a release (compiled presets inside the wasm are fine).

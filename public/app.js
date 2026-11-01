@@ -28,7 +28,8 @@ async function loadCatalog(upstream = false, force = false) {
   status(upstream ? "checking upstream releases…" : "loading catalog…");
   try {
     CAT = await api(`/api/catalog?upstream=${upstream ? 1 : 0}&force=${force ? 1 : 0}`);
-    $("#cat-info").innerHTML = `release <a href="${esc(CAT.release.url)}" target="_blank" rel="noopener">${esc(CAT.release.tag)}</a> (${CAT.release.assets} assets), glue from branch <code>${esc(CAT.glueRef)}</code>`;
+    const hubInfo = CAT.hub ? `, firmware hub ${CAT.hub.from ? `via ${CAT.hub.from === "hub" ? "thefirmwarehub.com" : "remotefm1.com (fallback)"} ${esc(CAT.hub.updated || "")}${CAT.hub.stale ? " (stale copy)" : ""}` : '<span class="warn">unreachable</span>'}` : "";
+    $("#cat-info").innerHTML = `release <a href="${esc(CAT.release.url)}" target="_blank" rel="noopener">${esc(CAT.release.tag)}</a> (${CAT.release.assets} assets), glue from branch <code>${esc(CAT.glueRef)}</code>${hubInfo}`;
     renderCatalog(upstream);
     status("");
   } catch (e) { status("error: " + e.message); }
@@ -37,8 +38,13 @@ function renderCatalog(up) {
   const tb = $("#cat-table tbody");
   tb.innerHTML = CAT.firmwares.map((f) => {
     const u = f.upstream;
-    const upCell = !up ? '<span class="mut">—</span>' : u?.tag ? `<code>${esc(u.tag)}</code> <span class="mut">${esc((u.sha || "").slice(0, 7))} (${esc(u.source)})</span>` : `<span class="warn">${esc(u?.error || "?")}</span>`;
-    const flag = !up ? "" : f.updateAvailable ? '<span class="pill warn">update available</span>' : f.pinMatchesStable ? '<span class="pill ok">at stable</span>' : u?.tag ? '<span class="pill mut">pin ≠ tag</span>' : "";
+    const h = f.hub;
+    const ghCell = u?.tag ? `<code>${esc(u.tag)}</code> <span class="mut">${esc((u.sha || "").slice(0, 7))} (GitHub ${esc(u.source)})</span>` : `<span class="warn">${esc(u?.error || "?")}</span>`;
+    const hubCell = !h ? "" : h.ok ? `<br><code>${esc(h.raw)}</code> <span class="mut">${esc((h.sha || "").slice(0, 7))} (hub release)</span>`
+      : h.raw ? `<br><span class="mut" title="${esc(h.reason || "")}">hub ${esc(h.raw)}${h.reason && !/not newer/.test(h.reason) ? " (not used)" : ""}</span>` : "";
+    const upCell = !up ? '<span class="mut">—</span>' : ghCell + hubCell;
+    const src = f.update ? (f.update.source === "hub" ? "hub release" : `GitHub ${f.update.source}`) : "";
+    const flag = !up ? "" : f.updateAvailable ? `<span class="pill warn" title="${esc(f.update.version)} at ${esc(f.update.sha.slice(0, 7))}">update: ${esc(f.update.version)}</span><br><span class="mut">${esc(src)}</span>` : f.pinMatchesStable ? '<span class="pill ok">at stable</span>' : u?.tag ? '<span class="pill mut">pin ≠ tag</span>' : "";
     const pinOk = f.glue?.pin && f.releaseCommit && f.glue.pin.startsWith(f.releaseCommit) ? "" : f.releaseCommit ? ' <span class="warn" title="the release file was built from another commit">≠ release</span>' : "";
     return `<tr>
       <td><b>${esc(f.id)}</b>${f.hostedDespiteGate ? ' <span class="pill warn" title="' + esc(f.hostedDespiteGate) + '">hosted only</span>' : ""}</td>
@@ -72,7 +78,7 @@ loadSite();
 $("#cat-load").onclick = () => loadCatalog(false, true);
 $("#cat-up").onclick = () => loadCatalog(true, true);
 $("#cat-update-all").onclick = async () => {
-  if (!confirm("Update every firmware with a newer stable release, and build each?")) return;
+  if (!confirm("Update every firmware with a newer stable release (GitHub, or the firmware hub's non-beta release), and build each?")) return;
   try { const j = await api("/api/build-all", { method: "POST", body: { update: true } }); openJobTab(j.id); } catch (e) { alert(e.message); }
 };
 
