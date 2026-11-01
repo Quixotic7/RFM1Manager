@@ -63,15 +63,25 @@ the same rule) and its commit, and flags **update available** when it is newer t
 
 ### 2. Update + build
 `POST /api/build {id, update}` (one firmware) or `POST /api/build-all {update, ids?}` (with `update`: those with an
-update). One build at a time. Steps, all logged: create the worktree if needed; the venv; `git submodule update --init
-[--recursive]` of the firmware's submodule; with `update` and a newer stable release: fetch, check out the tag's commit,
-change the glue's `VERSION x` (and its "tag vX" comment), **commit the pin bump in the manager worktree only** (never
-pushed); configure `-DFM1_RFM1=ON -DFM1_RFM1_ONLY=ON -DFM1_ONLY_CORES=<glue> -DFM1_EMCC=… -DCR_PYTHON=.venv/bin/python`
+update). One build at a time. Steps, all logged: create the worktree if needed; the venv (plus the glue's
+`PYTHON_NEEDS` modules, e.g. numpy); the firmware's submodule at HEAD's pin, cloned from `.gitmodules`' URL (FM1VST's
+shared `.git/config` points submodule URLs at another worktree's copy, which lacks newer commits and tags), the commit
+fetched from that URL (`--tags`, the tag, then the SHA; `--unshallow` when shallow), else from any other worktree's
+module copy (read only); with `update` and a newer stable release the old pin is never needed: fetch the tag's commit,
+check it out (`-f`), and change every unambiguous spelling of the old version in `core_<id>.cmake/.c/_desc.c`
+(`VERSION x`, `set(_x_ver x)`, `"vx"` / `"x"`, `NAME_VERSION=x`, `--release x`, the header's "Name x (https://github.com/<repo>,
+tag vx = sha" comment, fm1-base `FM-1_<prefix>MMmmpp` and Felucca-style `FELUCCA_ID "FM-1_<d>XY"` identities); the old
+version is the glue's `VERSION`, else its `VERSION_FILE` at the old pin, else the header comment. What still names the
+old version, or an identity that may encode it, is listed as **manual steps** in the bundle and the commit. The other
+cores the `FM1_ONLY_CORES` selector configures (`choralroot` is also a glue folder) get their submodules too. Configure `-DFM1_RFM1=ON -DFM1_RFM1_ONLY=ON -DFM1_ONLY_CORES=<glue> -DFM1_EMCC=… -DCR_PYTHON=.venv/bin/python`
 (`FM1_PUBLIC_BUILD=ON`, or `OFF` for a `HOSTED_DESPITE_GATE` core); build `rfm1_<id>` + `rfm1_run`; verify:
 `tools/rfm1_check.py` passes; the manifest has its required fields, authors, **licence texts** (`rfm1.license.<n>`
 sections) and **`source_url` at the exact pinned commit**; `rfm1_run` (with the glue's `RUN_ARGS`) boots it, the
 chord's RMS is > 0 and the LCD was written (the WAV is kept in the bundle). A gated core without
-`HOSTED_DESPITE_GATE` is refused. A good file is copied to `out/`.
+`HOSTED_DESPITE_GATE` is refused. With an update, only when every check passed is the pin bump **committed in the manager
+worktree** (never pushed), then the file is rebuilt so its `built_by` names that commit and checked again; a failed
+update restores the glue files and the submodule (nested checkouts the new release added are moved to `scratch/trash/`)
+to HEAD's pin, so the tree stays clean. A good file is copied to `out/`.
 
 A glue that reads its version from a file (`VERSION_FILE`) gets only the pin moved. Upstream releases that change the
 firmware's build (new sources, generators) fail in the build step with the error in the bundle.
@@ -79,7 +89,8 @@ firmware's build (new sources, generators) fail in the build step with the error
 ### 3. Log bundles
 Each job's folder in `logs/`: `build.log` (everything), `commands.txt` (every command line, with its directory),
 `env.txt`, `versions.txt` (emcc, cmake, python, node, git, the FM1VST commit + status), `error-excerpt.txt` (the first
-compiler / linker / CMake / Python error with 10 lines before and 25 after), `result.json`, `job.json`, the WAV, and
+git `fatal:` / CMake Error / compiler `error:` / linker / make "No rule" / Python traceback line, from the command that
+printed it, and 25 lines after; the manager's own `ERROR:` line only when nothing else matched), `result.json`, `job.json`, the WAV, and
 **`SUMMARY-FOR-LLM.md`**: what was built from what (repo + commit, upstream tag), the steps, the excerpt, the glue
 file paths and the commands to reproduce: paste it as is. The "Builds & logs" tab lists jobs (live) and bundles; each
 file opens there with a Copy button. API: `GET /api/jobs`, `/api/jobs/<n>?since=<line>`, `/api/logs`,
@@ -187,8 +198,9 @@ Each Metadata card has **Capture from RemoteFM1** (the same page for that id).
 ## Limits
 
 - One FM1VST worktree, so one build at a time (`409` otherwise).
-- The pin bump edits a literal `VERSION`; glue that encodes the version elsewhere (or needs new sources for a new
-  upstream release) needs a hand edit: the bundle says where.
+- The pin bump edits the version where it is unambiguous; anything else (comments describing the old release, derived
+  identities, new sources or generators of a new upstream release) needs a hand edit: the bundle's "Manual steps" and
+  "What to look at" say where.
 - Scaffolds are a starting point: unit and descriptor files copied from another core usually need work.
 
 - Test in RemoteFM1: sound starts with a click on the page (Play); there is no LCD frame to capture before it runs.
