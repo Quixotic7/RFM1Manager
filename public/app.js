@@ -150,7 +150,7 @@ async function loadMeta() {
 }
 
 $("#meta-import").onclick = async () => {
-  const overwrite = confirm("Overwrite fields and images already set? OK = overwrite, Cancel = fill only empty ones.");
+  const overwrite = confirm("Fills empty fields and images. Also REPLACE the ones you already set? (Cancel keeps them)");
   const msg = $("#meta-import-msg"); msg.textContent = "importing...";
   try {
     const r = await api("/api/meta-import", { method: "POST", body: { overwrite } });
