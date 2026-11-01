@@ -12,7 +12,7 @@ import { addFirmware, detect, existingCore } from "./lib/addfw.js";
 import { readMeta, setMeta, setImage, imagePath, importRemoteFM1, SCHEMA_MD } from "./lib/meta.js";
 import { readReadme, saveReadme, refreshReadme } from "./lib/readme.js";
 import { collectFiles, stage, readPreview, publish } from "./lib/publish.js";
-import { siteStatus, refreshSite, siteFile } from "./lib/site.js";
+import { siteStatus, refreshSite, siteFile, ensureSiteCurrent } from "./lib/site.js";
 
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json", ".md": "text/plain; charset=utf-8",
@@ -168,6 +168,7 @@ route("GET", /^\/rfm1m\/open\/([a-z0-9_]+)$/, async (req, q, [, id], res) => {
   const f = files.find((x) => x.id === id);
   if (!f) throw Object.assign(new Error(`no .rfm1 for ${id} in out/ or release ${rel.tag}`), { status: 404 });
   const file = f.origin === "built" ? `/files/out/${f.file}` : `/files/release/${rel.tag}/${f.file}`;
+  await ensureSiteCurrent().catch(() => {});
   res.writeHead(302, { Location: siteUrl(file, id), "Cache-Control": "no-store" });
   res.end();
 });
