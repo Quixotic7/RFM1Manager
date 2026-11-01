@@ -123,14 +123,15 @@ $("#add-scaffold").onclick = () => add("scaffold");
 async function loadMeta() {
   if (!CAT) await loadCatalog(false);
   const m = await api("/api/meta");
-  const F = ["what", "tag", "category", "author", "site"];
+  const F = ["tag", "category", "author", "site"];
+  const L = { tag: "tag (the line under the name)" };
   $("#meta-list").innerHTML = CAT.firmwares.map((f) => {
     const e = m.firmwares[f.id] || {};
     return `<div class="card" data-id="${esc(f.id)}">
       <div class="row"><img src="${e.image ? "/api/meta/" + esc(e.image) + "?t=" + Date.now() : ""}" alt="">
         <div><b>${esc(f.name)}</b> <span class="mut">${esc(f.id)}</span><br><input type="file" accept="image/png,image/jpeg,image/webp"></div></div>
-      <label class="mut">description<textarea data-k="description">${esc(e.description || "")}</textarea></label>
-      ${F.map((k) => `<label class="mut">${k} <input data-k="${k}" value="${esc(e[k] || "")}"></label>`).join("")}
+      <label class="mut">description (shown in RemoteFM1 when selected)<textarea data-k="what" rows="5">${esc(e.what || "")}</textarea></label>
+      ${F.map((k) => `<label class="mut">${L[k] || k} <input data-k="${k}" value="${esc(e[k] || "")}"></label>`).join("")}
       <label class="mut"><input type="checkbox" data-k="beta"${e.beta ? " checked" : ""}> beta</label>
       <div class="bar"><button data-save>Save</button><span class="mut" data-msg></span></div></div>`;
   }).join("");
