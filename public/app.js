@@ -47,7 +47,7 @@ function renderCatalog(up) {
     const flag = !up ? "" : f.updateAvailable ? `<span class="pill warn" title="${esc(f.update.version)} at ${esc(f.update.sha.slice(0, 7))}">update: ${esc(f.update.version)}</span><br><span class="mut">${esc(src)}</span>` : f.pinMatchesStable ? '<span class="pill ok">at stable</span>' : u?.tag ? '<span class="pill mut">pin ≠ tag</span>' : "";
     const pinOk = f.glue?.pin && f.releaseCommit && f.glue.pin.startsWith(f.releaseCommit) ? "" : f.releaseCommit ? ' <span class="warn" title="the release file was built from another commit">≠ release</span>' : "";
     return `<tr>
-      <td><b>${esc(f.id)}</b>${f.hostedDespiteGate ? ' <span class="pill warn" title="' + esc(f.hostedDespiteGate) + '">hosted only</span>' : ""}</td>
+      <td><b>${esc(f.id)}</b>${f.hostedDespiteGate ? ' <span class="pill warn" title="' + esc(f.hostedDespiteGate) + '">hosted only</span>' : ""}${f.virtual ? ' <span class="pill" title="runs in RemoteFM1 apps only, never on an FM-1">Fantasy CFW</span>' : ""}</td>
       <td>${esc(f.name)} ${esc(f.version || "")}<br><span class="mut">${esc(f.authors.join(", "))} · ${esc(f.license || "")}</span></td>
       <td>${f.releaseFile ? `<code>${esc(f.releaseFile)}</code><br><span class="mut">${fmtSize(f.size)}</span>` : '<span class="warn">not released</span>'}</td>
       <td>${f.repo ? `<a href="https://github.com/${esc(f.repo)}" target="_blank" rel="noopener">${esc(f.repo)}</a>` : ""}<br><span class="mut">${esc(f.glue?.family || "")}</span></td>
@@ -266,7 +266,7 @@ $("#pb-stage").onclick = async () => {
     $("#pb-prev").innerHTML = `<h2>Preview: ${esc(PV.tag)} on ${esc(PV.repo)} (previous ${esc(PV.previous)}) — ${PV.files.length} files, ${fmtSize(total)}</h2>
       ${PV.problems.length ? `<div class="danger"><b class="bad">Problems (publish is blocked):</b><ul>${PV.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>` : '<p class="ok">No problems found.</p>'}
       <table><thead><tr><th>File</th><th>Size</th><th>SHA-256</th><th>From</th><th>Licence</th><th>Source</th><th></th></tr></thead><tbody>
-      ${PV.files.map((f) => `<tr><td><code>${esc(f.file)}</code>${f.hosted ? ' <span class="pill warn">hosted only</span>' : ""}</td><td>${fmtSize(f.size)}</td><td><code>${esc(f.sha256)}</code></td><td>${esc(f.origin)}</td><td>${esc(f.license)} (${f.licenses} texts)</td><td><code>${esc(f.source_url)}</code></td><td>${f.changed ? '<span class="pill warn">new/changed</span>' : ""} ${testLink(testUrl(`/files/staging/${PV.tag}/${f.file}`, f.id), "Test")}</td></tr>`).join("")}
+      ${PV.files.map((f) => `<tr><td><code>${esc(f.file)}</code>${f.hosted ? ' <span class="pill warn">hosted only</span>' : ""}${f.virtual ? ' <span class="pill">Fantasy CFW</span>' : ""}</td><td>${fmtSize(f.size)}</td><td><code>${esc(f.sha256)}</code></td><td>${esc(f.origin)}</td><td>${esc(f.license)} (${f.licenses} texts)</td><td><code>${esc(f.source_url)}</code></td><td>${f.changed ? '<span class="pill warn">new/changed</span>' : ""} ${testLink(testUrl(`/files/staging/${PV.tag}/${f.file}`, f.id), "Test")}</td></tr>`).join("")}
       </tbody></table><h2>SHA256SUMS</h2><pre>${esc(PV.sums)}</pre><h2>Release notes</h2><pre>${esc(PV.notes)}</pre>
       <p class="mut">README ${PV.readmeChanged ? "will change (staging/" + esc(PV.tag) + "/README.preview.md)" : "unchanged"}. Staged in <code>${esc(PV.dir)}</code>.</p>`;
     $("#pb-out").textContent = "";
