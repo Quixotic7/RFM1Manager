@@ -10,7 +10,7 @@ npm start            # or: node server.js
 # -> http://127.0.0.1:4717/   (127.0.0.1 only; no browser is opened, open it yourself)
 ```
 
-Stop it by its PID (written to `.server.pid`): `kill $(cat .server.pid)`.
+Stop it by its PID (written to `.server-<port>.pid`): `kill $(cat .server-4717.pid)`.
 
 ## Setup
 

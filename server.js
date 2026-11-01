@@ -149,6 +149,6 @@ const server = createServer(async (req, res) => {
   }
 });
 server.listen(cfg.port, cfg.host, () => {
-  writeFileSync(join(APP, ".server.pid"), String(process.pid));
+  writeFileSync(join(APP, `.server-${cfg.port}.pid`), String(process.pid));
   console.log(`RFM1Manager on http://${cfg.host}:${cfg.port}/ (pid ${process.pid}); no browser is opened`);
 });

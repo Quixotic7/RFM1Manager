@@ -5,6 +5,6 @@ scratch/
 staging/
 out/
 logs/
-.server.pid
+.server-*.pid
 config.json
 .DS_Store
