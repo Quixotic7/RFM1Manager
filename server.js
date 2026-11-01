@@ -4,7 +4,7 @@
 import { createServer } from "node:http";
 import { readFileSync, existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, extname, normalize } from "node:path";
-import { cfg, APP } from "./lib/util.js";
+import { cfg, APP, run } from "./lib/util.js";
 import { catalog, upstreamLatest, scanGlue, ghSlug } from "./lib/catalog.js";
 import { startJob, getJob, listJobs, view } from "./lib/jobs.js";
 import { buildCore } from "./lib/build.js";
@@ -100,6 +100,17 @@ route("GET", /^\/api\/existing$/, (req, q) => existingCore(q.get("url")));
 
 // catalog metadata
 route("GET", /^\/api\/meta$/, () => readMeta());
+// when each firmware was last added or updated: the newest manager-branch commit to its glue (core-glue/*/core_<id>.cmake)
+route("GET", /^\/api\/meta\/updated$/, async () => {
+  const r = await run("git", ["-C", cfg.worktree, "log", "--format=@%cI", "--name-only", "--", "core-glue"]);
+  const out = {};
+  let date = null;
+  for (const l of r.out.split("\n")) {
+    if (l.startsWith("@")) date = l.slice(1);
+    else { const m = /^core-glue\/[^/]+\/core_([a-z0-9_]+)\.cmake$/.exec(l); if (m && date && !out[m[1]]) out[m[1]] = date; }
+  }
+  return out;
+});
 route("POST", /^\/api\/meta-import$/, async (req) => { const b = await json(req); return importRemoteFM1((await catalog()).firmwares.map((f) => f.id), !!b.overwrite); });
 route("PUT", /^\/api\/meta\/([a-z0-9_]+)$/, async (req, q, [, id]) => setMeta(id, await json(req)));
 route("POST", /^\/api\/meta\/([a-z0-9_]+)\/image$/, async (req, q, [, id]) => setImage(id, await body(req, 1048576 + 1)));

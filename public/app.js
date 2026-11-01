@@ -172,16 +172,39 @@ $("#add-detect").onclick = () => add("detect");
 $("#add-scaffold").onclick = () => add("scaffold");
 
 // ---------- metadata ----------
+// the filter and sort survive a reload (a per-viewer convenience)
+const metaPref = (k, d) => { try { return localStorage.getItem(`rfm1m.meta.${k}`) || d; } catch { return d; } };
+const metaSave = (k, v) => { try { localStorage.setItem(`rfm1m.meta.${k}`, v); } catch {} };
+$("#meta-filter").value = metaPref("filter", "all");
+$("#meta-sort").value = metaPref("sort", "name");
+$("#meta-filter").onchange = () => { metaSave("filter", $("#meta-filter").value); loadMeta(); };
+$("#meta-sort").onchange = () => { metaSave("sort", $("#meta-sort").value); loadMeta(); };
+const META_NEEDED = ["image", "what", "tag", "category"];
+
 async function loadMeta() {
   if (!CAT) await loadCatalog(false);
-  const m = await api("/api/meta");
+  const [m, upd] = await Promise.all([api("/api/meta"), api("/api/meta/updated").catch(() => ({}))]);
   const F = ["tag", "category", "author", "site"];
   const L = { tag: "tag (the line under the name)" };
-  $("#meta-list").innerHTML = CAT.firmwares.map((f) => {
+  const filter = $("#meta-filter").value, sort = $("#meta-sort").value;
+  const missing = (e) => META_NEEDED.filter((k) => !e[k]);
+  let list = CAT.firmwares.filter((f) => {
+    const miss = missing(m.firmwares[f.id] || {});
+    return filter === "all" || (filter === "any" ? miss.length > 0 : miss.includes(filter));
+  });
+  list = list.sort(sort === "updated"
+    ? (a, b) => (upd[b.id] || "").localeCompare(upd[a.id] || "") || a.name.localeCompare(b.name)
+    : (a, b) => a.name.localeCompare(b.name));
+  $("#meta-count").textContent = `${list.length} of ${CAT.firmwares.length}`;
+  $("#meta-list").innerHTML = list.map((f) => {
     const e = m.firmwares[f.id] || {};
+    const miss = missing(e), when = upd[f.id] ? upd[f.id].slice(0, 10) : "";
     return `<div class="card" data-id="${esc(f.id)}">
       <div class="row"><img src="${e.image ? "/api/meta/" + esc(e.image) + "?t=" + Date.now() : ""}" alt="">
-        <div><b>${esc(f.name)}</b> <span class="mut">${esc(f.id)}</span><br><input type="file" accept="image/png,image/jpeg,image/webp"></div></div>
+        <div><b>${esc(f.name)}</b> <span class="mut">${esc(f.id)} ${esc(f.version || "")}</span>
+          ${when ? `<br><span class="mut">updated ${esc(when)}</span>` : ""}
+          ${miss.length ? `<br><span class="warn">missing: ${miss.map((k) => k === "image" ? "thumbnail" : k === "what" ? "description" : k).join(", ")}</span>` : ""}
+          <br><input type="file" accept="image/png,image/jpeg,image/webp"></div></div>
       <label class="mut">description (shown in RemoteFM1 when selected)<textarea data-k="what" rows="5">${esc(e.what || "")}</textarea></label>
       ${F.map((k) => `<label class="mut">${L[k] || k} <input data-k="${k}" value="${esc(e[k] || "")}"></label>`).join("")}
       <label class="mut"><input type="checkbox" data-k="beta"${e.beta ? " checked" : ""}> beta</label>

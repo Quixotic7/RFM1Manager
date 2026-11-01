@@ -61,6 +61,21 @@
   <section id="meta" class="tab">
     <p class="hint">Stored in RemoteFM1FW <code>catalog/catalog.json</code> + <code>catalog/images/</code> (schema in <code>catalog/SCHEMA.md</code>).</p>
     <div class="bar"><button id="meta-import">Import from RemoteFM1</button><span class="mut" id="meta-import-msg"></span></div>
+    <div class="bar">
+      <label class="mut">show <select id="meta-filter">
+        <option value="all">all</option>
+        <option value="any">missing anything</option>
+        <option value="image">missing thumbnail</option>
+        <option value="what">missing description</option>
+        <option value="tag">missing tag</option>
+        <option value="category">missing category</option>
+      </select></label>
+      <label class="mut">sort <select id="meta-sort">
+        <option value="name">name</option>
+        <option value="updated">recently updated</option>
+      </select></label>
+      <span class="mut" id="meta-count"></span>
+    </div>
     <div id="meta-list" class="cards"></div>
   </section>
 
