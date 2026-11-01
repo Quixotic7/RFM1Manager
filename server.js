@@ -9,7 +9,7 @@ import { catalog, upstreamLatest, scanGlue, ghSlug } from "./lib/catalog.js";
 import { startJob, getJob, listJobs, view } from "./lib/jobs.js";
 import { buildCore } from "./lib/build.js";
 import { addFirmware, detect } from "./lib/addfw.js";
-import { readMeta, setMeta, setImage, imagePath, SCHEMA_MD } from "./lib/meta.js";
+import { readMeta, setMeta, setImage, imagePath, importRemoteFM1, SCHEMA_MD } from "./lib/meta.js";
 import { readReadme, saveReadme, refreshReadme } from "./lib/readme.js";
 import { collectFiles, stage, readPreview, publish } from "./lib/publish.js";
 
@@ -97,6 +97,7 @@ route("GET", /^\/api\/detect$/, (req, q) => detect(q.get("url")));
 
 // catalog metadata
 route("GET", /^\/api\/meta$/, () => readMeta());
+route("POST", /^\/api\/meta-import$/, async (req) => { const b = await json(req); return importRemoteFM1((await catalog()).firmwares.map((f) => f.id), !!b.overwrite); });
 route("PUT", /^\/api\/meta\/([a-z0-9_]+)$/, async (req, q, [, id]) => setMeta(id, await json(req)));
 route("POST", /^\/api\/meta\/([a-z0-9_]+)\/image$/, async (req, q, [, id]) => setImage(id, await body(req, 1048576 + 1)));
 route("GET", /^\/api\/meta\/(images\/[a-z0-9_]+\.(?:png|jpg|webp))$/, (req, q, [, rel], res) => {

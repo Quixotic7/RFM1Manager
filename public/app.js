@@ -149,6 +149,16 @@ async function loadMeta() {
   });
 }
 
+$("#meta-import").onclick = async () => {
+  const overwrite = confirm("Overwrite fields and images already set? OK = overwrite, Cancel = fill only empty ones.");
+  const msg = $("#meta-import-msg"); msg.textContent = "importing...";
+  try {
+    const r = await api("/api/meta-import", { method: "POST", body: { overwrite } });
+    msg.textContent = Object.entries(r).map(([id, x]) => `${id}: ${x.filled.length ? "filled " + x.filled.join(",") : "nothing filled"}${x.skipped.length ? "; kept " + x.skipped.join(",") : ""}${x.missing.length ? "; no " + x.missing.join(",") : ""}`).join(" | ");
+    loadMeta();
+  } catch (e) { msg.textContent = e.message; }
+};
+
 // ---------- README ----------
 function mdLite(md) {
   return md.split("\n").map((l) => {
