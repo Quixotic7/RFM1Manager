@@ -137,12 +137,37 @@ $("#copy-view").onclick = () => navigator.clipboard.writeText($("#view").textCon
 async function add(mode) {
   const url = $("#add-url").value.trim();
   if (!url) return;
+  if (mode === "scaffold") await checkExisting();
   try {
-    const j = await api("/api/add", { method: "POST", body: { url, id: $("#add-id").value.trim() || undefined, mode, target: $("#add-target").value } });
+    const j = await api("/api/add", { method: "POST", body: { url, id: $("#add-id").value.trim() || undefined, mode, target: $("#add-target").value, hostedDespiteGate: $("#add-hdg").value.trim() || undefined } });
     $("#add-out").textContent = `job #${j.id} started; following in Builds & logs`;
     openJobTab(j.id);
   } catch (e) { $("#add-out").textContent = "error: " + e.message; }
 }
+// a repository that is already a core in FM1VST is never scaffolded as a copy: Add enables it as .rfm1 + updates it
+let addExisting = null, addTimer = null;
+async function checkExisting() {
+  const url = $("#add-url").value.trim();
+  addExisting = null;
+  $("#add-scaffold").textContent = "Scaffold + build";
+  $("#add-existing").classList.add("hidden");
+  $("#add-hdg-l").classList.add("hidden");
+  if (!/github\.com\/[^/]+\/[^/\s]+/.test(url)) return null;
+  try {
+    const r = await api(`/api/existing?url=${encodeURIComponent(url)}`);
+    if (r.cores && r.cores.length) {
+      const c = r.cores.find((x) => !x.rfm1) || r.cores[0];
+      addExisting = c;
+      $("#add-scaffold").textContent = c.rfm1 ? "Update + build" : "Enable as .rfm1 + update";
+      $("#add-existing").textContent = `already a core in FM1VST (${c.id}, ${c.file}): ${c.action}. No copy is scaffolded; it runs in the manager worktree and commits only when every check passes.`;
+      $("#add-existing").classList.remove("hidden");
+      $("#add-hdg-l").classList.toggle("hidden", !(c.gated && !c.rfm1));
+      if (c.gated && !c.rfm1) $("#add-existing").textContent += ` It is GATED (${c.gated}): enabling it needs your reason for hosting it (HOSTED_DESPITE_GATE, built with FM1_PUBLIC_BUILD=OFF).`;
+    }
+  } catch { /* the check is a hint only */ }
+  return addExisting;
+}
+$("#add-url").addEventListener("input", () => { clearTimeout(addTimer); addTimer = setTimeout(checkExisting, 400); });
 $("#add-detect").onclick = () => add("detect");
 $("#add-scaffold").onclick = () => add("scaffold");
 

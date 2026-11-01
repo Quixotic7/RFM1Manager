@@ -117,21 +117,52 @@ file opens there with a Copy button. API: `GET /api/jobs`, `/api/jobs/<n>?since=
 `/api/logs/<bundle>/<file>`.
 
 ### 4. Add firmware
-`POST /api/add {url, mode: "detect"|"scaffold", id?, target: "scratch"|"manager", template?}`.
+`POST /api/add {url, mode: "detect"|"scaffold", id?, target: "scratch"|"manager", template?, hostedDespiteGate?}`;
+`GET /api/existing?url=` (local: is the repository already a core?).
 Detection (`GET /api/detect?url=` too): the repository's metadata (fork parent, licence, owner), its latest stable
 release, its file tree at that tag; compared with every existing core's tree at its pin (Jaccard similarity of the
 path shapes, three levels, file names reduced to extensions), plus markers per family (fm1-base: `app/fm1.toml`, a
 `base/` fm1-base submodule; Felucca: `platforms/`, `felucca*`; SLOOP; Dinghy/zvenson: `dinghy`, `*vave*`,
 `smk37-port.yaml`; plat: `firmware/src/app`, `host/*_host.c`; ChoralRoot, Melodee, Speak37), in paths, README and
-`.gitmodules`, and the fork parent. The family with the best score and its most similar core win. It also clones the
+`.gitmodules`, and the fork parent. The family with the best score and its most similar core win. Within the family,
+a firmware on a base (`base/`, `felucca-base/`, `firmware/bsp`: a submodule's commit date, or a vendored base's pin
+date) takes the core whose base is of the closest date as its template, a day added per extra glue unit
+(`<t>_*.c`) the template would bring: FRASIL (fm1-base of 2026-10-30, `plat_fm1.c` needing `chip/ota.c`) gets
+Mutable Dreams', not AMB's. A fork's "latest stable release" that is its parent's own tag at the parent's commit
+(HYP-1's v1.1 is AMB-1's) is flagged as **not its own** and is refused in the manager worktree. It also clones the
 repo (shallow, at the tag) into `scratch/clones/` for its LICENSE.
-Scaffold: in the scratch worktree (default; recreated each time) or the manager worktree: `git submodule add` at
-`cores/<repo>`, checkout the stable tag, copy the closest core's glue files (`core_<t>.cmake/.c/_desc.c` and its
-`<t>_*.c`) renamed, with the template's id / submodule path / repo slug swapped, golden checks dropped, `VERSION`,
-`LICENSE` and `fm1_add_rfm1(<id> AUTHORS "<owner's name>")` set; commit it there; then the build + verify above, in
-the same bundle, with an add-firmware `SUMMARY-FOR-LLM.md` (detection, scores, similar cores, scaffold, first error).
-Scratch builds never go to `out/`. A template whose glue is a folder-wide `core.cmake` (Melodee) is refused (scaffold
-by hand).
+
+**Already a core.** When the URL's repository is already a core in FM1VST (the same `.gitmodules` URL), Add never
+scaffolds a copy: the page says "already a core in FM1VST: enable as .rfm1 + update" (or "already an .rfm1: update +
+build") and the button becomes **Enable as .rfm1 + update**. In the manager worktree it adds
+`fm1_add_rfm1(<id> AUTHORS "<the glue's CREDITS 'X by <author>', else the owner's GitHub name>" LICENSE_FILES ...)`
+(the root LICENSE, LICENSING.md / NOTICE, every `LICENSES/*` file and the licence files elsewhere in the tree, e.g. a
+font's OFL in `assets/fonts/`, each named by its text: `"OFL-1.1 (the Terminus font in {name})=..."`), `MEMORY_MIB`
+only when the linker says the 8 MiB default is too small (16 or 32, built again), and, for a GATED core, only with
+the request's `hostedDespiteGate` reason (the owner's call; the page asks for it) as `HOSTED_DESPITE_GATE`. Then the
+update + build + verify of section 2 (GitHub's latest stable release, else the hub's non-beta one): the glue edit and
+the pin bump are **one commit, made only when every check passed**; otherwise the glue files are put back as they
+were before the job (uncommitted hand edits kept) and the submodule to HEAD's pin. A glue that needs a hand port to
+the new release: port it in the worktree (uncommitted), then Add again.
+
+**Scaffold** (a new core): in the scratch worktree (default; recreated each time) or the manager worktree: `git
+submodule add` at `cores/<repo>`, checkout the stable tag, copy the closest core's glue files (`core_<t>.cmake/.c/_desc.c`
+and its `<t>_*.c`) renamed. The rename touches only what the glue owns: the submodule path's prefix (the firmware's
+own files after it stay), the repository slug, the copied files' names, the glue's identifiers (`fm1core_<t>*`,
+`FM1CORE_<T>_*`, `core_<t>*`, `rfm1_<t>`, `gen_<t>`), `FM1CORE_ID="<t>"`-like strings, and in the .cmake the id as a
+call's first argument, `<t>_core/_obj/_hostsim` targets and `_<t>_*` variables; never an `#include "grimm.c"` of the
+firmware, its macros (`GRIMM_WEB`) or the template's other glue (`grimm_hook/`). Golden checks are dropped; `VERSION`
+and `LICENSE` set; `GEN` becomes what the new firmware's own generate step writes (it is run once, as FM1Cores.cmake
+runs it, and `build/gen` listed; the template's list only when it fails); `fm1_add_rfm1(<id> AUTHORS .. LICENSE_FILES
+..)` from the new tree (as above). Then a check that every `#include "..."` / `"x.c"` define of the new units and
+every SOURCE / UNIT / DESC / EXTRA_SOURCES / INCLUDES / CREDITS_FILES path (set() variables expanded) and every
+source file named in a set() list resolves (the glue, `core-glue/common`, `core-api`, the INCLUDES, the submodule's
+tree): what does not is listed in the summary. In the scratch worktree the scaffold is committed there before the
+build; in the **manager worktree it is committed only when every check passed**, else taken out again (the glue
+copied to the bundle's `glue-scaffold/`, the files and the submodule's checkout moved to `scratch/trash/`,
+`.gitmodules` back to HEAD's): the tree stays clean. The same bundle gets an add-firmware `SUMMARY-FOR-LLM.md`
+(detection, scores, base generation, GEN, similar cores, scaffold, unresolved references, first error). Scratch builds
+never go to `out/`. A template whose glue is a folder-wide `core.cmake` (Melodee) is refused (scaffold by hand).
 
 ### 5. Catalog metadata
 `GET /api/meta`, `PUT /api/meta/<id> {description, what, tag, category, author, site, beta}`,
@@ -222,7 +253,9 @@ Each Metadata card has **Capture from RemoteFM1** (the same page for that id).
 - The pin bump edits the version where it is unambiguous; anything else (comments describing the old release, derived
   identities, new sources or generators of a new upstream release) needs a hand edit: the bundle's "Manual steps" and
   "What to look at" say where.
-- Scaffolds are a starting point: unit and descriptor files copied from another core usually need work.
+- Scaffolds are a starting point: unit and descriptor files copied from another core usually need work (the entry
+  points, the firmware's host macros, what its sources take from the hardware layer); the summary's unresolved
+  references are the first places to look.
 
 - Test in RemoteFM1: sound starts with a click on the page (Play); there is no LCD frame to capture before it runs.
   The site's hosted managers (`build/managers/index.json`, 404) and the native / emulated engines' wasm (`web/build`)

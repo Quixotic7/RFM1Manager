@@ -8,7 +8,7 @@ import { cfg, APP } from "./lib/util.js";
 import { catalog, upstreamLatest, scanGlue, ghSlug } from "./lib/catalog.js";
 import { startJob, getJob, listJobs, view } from "./lib/jobs.js";
 import { buildCore } from "./lib/build.js";
-import { addFirmware, detect } from "./lib/addfw.js";
+import { addFirmware, detect, existingCore } from "./lib/addfw.js";
 import { readMeta, setMeta, setImage, imagePath, importRemoteFM1, SCHEMA_MD } from "./lib/meta.js";
 import { readReadme, saveReadme, refreshReadme } from "./lib/readme.js";
 import { collectFiles, stage, readPreview, publish } from "./lib/publish.js";
@@ -96,6 +96,7 @@ route("POST", /^\/api\/add$/, async (req) => {
   return view(j);
 });
 route("GET", /^\/api\/detect$/, (req, q) => detect(q.get("url")));
+route("GET", /^\/api\/existing$/, (req, q) => existingCore(q.get("url")));
 
 // catalog metadata
 route("GET", /^\/api\/meta$/, () => readMeta());
