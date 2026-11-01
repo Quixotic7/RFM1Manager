@@ -165,3 +165,7 @@ more), no problems, RemoteFM1FW on `main`; it then commits README + catalog, pus
 - The pin bump edits a literal `VERSION`; glue that encodes the version elsewhere (or needs new sources for a new
   upstream release) needs a hand edit: the bundle says where.
 - Scaffolds are a starting point: unit and descriptor files copied from another core usually need work.
+
+## Start from Finder
+
+Double-click `Start RFM1Manager.command` to start the server (if it is not running) and open the site in your browser. `Stop RFM1Manager.command` stops it. The server log is `logs/server.log`.
