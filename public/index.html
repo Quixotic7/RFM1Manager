@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RFM1 Manager</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>RFM1 Manager</h1>
+  <nav id="tabs">
+    <button data-tab="catalog" class="on">Catalog</button>
+    <button data-tab="jobs">Builds &amp; logs</button>
+    <button data-tab="add">Add firmware</button>
+    <button data-tab="meta">Metadata</button>
+    <button data-tab="readme">README</button>
+    <button data-tab="publish">Publish</button>
+  </nav>
+  <span id="status"></span>
+</header>
+<main>
+  <section id="catalog" class="tab on">
+    <div class="bar">
+      <button id="cat-load">Reload</button>
+      <button id="cat-up">Check upstream</button>
+      <button id="cat-update-all">Update + build all with updates</button>
+      <span id="cat-info"></span>
+    </div>
+    <table id="cat-table"><thead><tr>
+      <th>id</th><th>Firmware</th><th>Release file</th><th>Repo</th><th>Glue version</th><th>Pinned</th><th>Upstream stable</th><th></th><th>Actions</th>
+    </tr></thead><tbody></tbody></table>
+  </section>
+
+  <section id="jobs" class="tab">
+    <div class="cols">
+      <div class="col narrow">
+        <h2>Jobs</h2><ul id="job-list" class="list"></ul>
+        <h2>Log bundles</h2><ul id="log-list" class="list"></ul>
+      </div>
+      <div class="col">
+        <div class="bar"><b id="view-title">—</b> <span id="view-files"></span> <button id="copy-view">Copy</button></div>
+        <pre id="view"></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="add" class="tab">
+    <div class="form">
+      <label>GitHub URL <input id="add-url" placeholder="https://github.com/owner/repo" size="60"></label>
+      <label>id (optional) <input id="add-id" size="16"></label>
+      <label>Where <select id="add-target"><option value="scratch">scratch worktree (rfm1-manager-scratch)</option><option value="manager">manager worktree (rfm1-manager)</option></select></label>
+      <div class="bar"><button id="add-detect">Detect only</button><button id="add-scaffold">Scaffold + build</button></div>
+    </div>
+    <pre id="add-out"></pre>
+  </section>
+
+  <section id="meta" class="tab">
+    <p class="hint">Stored in RemoteFM1FW <code>catalog/catalog.json</code> + <code>catalog/images/</code> (schema in <code>catalog/SCHEMA.md</code>).</p>
+    <div id="meta-list" class="cards"></div>
+  </section>
+
+  <section id="readme" class="tab">
+    <div class="bar"><button id="rd-load">Load</button><button id="rd-refresh">Refresh generated table + build notes</button><button id="rd-save">Save to RemoteFM1FW</button><span id="rd-info"></span></div>
+    <div class="cols"><textarea id="rd-text" spellcheck="false"></textarea><div id="rd-prev" class="md"></div></div>
+  </section>
+
+  <section id="publish" class="tab">
+    <div class="form">
+      <label>Tag <input id="pb-tag" size="20"></label>
+      <label>Release notes (empty: generated)<textarea id="pb-notes" rows="5"></textarea></label>
+      <label>Leave out ids (comma separated) <input id="pb-exclude" size="40"></label>
+      <div class="bar"><button id="pb-stage">Stage + preview</button><button id="pb-dry">Dry run</button></div>
+    </div>
+    <div id="pb-prev"></div>
+    <div id="pb-confirm" class="danger hidden">
+      <p>Real publish: commits + pushes RemoteFM1FW and runs <code>gh release create</code>. Type the tag to confirm.</p>
+      <input id="pb-confirm-tag" size="20"> <button id="pb-go" disabled>Publish release</button>
+    </div>
+    <pre id="pb-out"></pre>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
