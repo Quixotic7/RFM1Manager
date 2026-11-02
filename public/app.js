@@ -184,8 +184,8 @@ const META_NEEDED = ["image", "what", "tag", "category"];
 async function loadMeta() {
   if (!CAT) await loadCatalog(false);
   const [m, upd] = await Promise.all([api("/api/meta"), api("/api/meta/updated").catch(() => ({}))]);
-  const F = ["tag", "category", "author", "site"];
-  const L = { tag: "tag (the line under the name)" };
+  const F = ["tag", "category", "author", "site", "editor", "port"];
+  const L = { tag: "tag (the line under the name)", editor: "editor (https: the author's own web editor / manager)", port: "port (its USB MIDI port name)" };
   const filter = $("#meta-filter").value, sort = $("#meta-sort").value;
   const missing = (e) => META_NEEDED.filter((k) => !e[k]);
   let list = CAT.firmwares.filter((f) => {
