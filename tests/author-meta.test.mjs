@@ -202,4 +202,57 @@ await ok("pick: the owner's ignoreTarget -> the manager's pick", () => {
   assert.equal(p.up, normal);
 });
 
+// ---------- the Hub's fmhub.json as a fallback ----------
+const { applyHubMeta } = await import("../lib/meta.js");
+const { hubCard } = await import("../lib/hub.js");
+const HE = (data, card = null, sha = "aaaa1111") => ({ id: "x", fmhub: { sha, data }, card });
+const imgs = { "https://thefirmwarehub.com/fw/cards/h1.png": png(240, 240), "https://thefirmwarehub.com/fw/cards/h2.png": png(300, 300), "https://thefirmwarehub.com/fw/cards/bad.png": png(240, 100) };
+const fetchImg = async (u) => imgs[u];
+await ok("hub: hubCard maps fmhub.json (kinds -> category, plain text, https editor, hub's image copy)", () => {
+  const c = hubCard(HE({ what: "A synth.", kinds: ["groove", "synth"], editor: "http://no", author: "Me", image: "docs/card.png" }, "fw/cards/h1.png"));
+  assert.deepEqual(c.fields, { what: "A synth.", category: "Groovebox", author: "Me" });
+  assert.equal(c.imageUrl, "https://thefirmwarehub.com/fw/cards/h1.png");
+  assert.equal(hubCard({ id: "x" }), null);
+  assert.equal(hubCard(HE({ what: "t", kind: "tracker" })).fields.category, "Other");
+  assert.equal(hubCard(HE({ what: "t" }, "fw/cards/h1.png")).imageUrl, undefined);   // the hub's card without the author's image: not used
+});
+await ok("hub: fills free fields only; the owner's text stays; follows the Hub while untouched", async () => {
+  setMeta("hfa", { what: "Owner's text." });
+  let r = await applyHubMeta("hfa", hubCard(HE({ what: "Hub text.", kind: "drums", editor: "https://e.example/", image: "c.png" }, "fw/cards/h1.png")), () => {}, fetchImg);
+  let c = readMeta().firmwares.hfa;
+  assert.equal(c.what, "Owner's text."); assert.equal(c.category, "Drums"); assert.equal(c.editor, "https://e.example/");
+  assert.equal(c.image, "images/hfa.png"); assert.deepEqual(Object.keys(c.hub_meta.fields).sort(), ["category", "editor"]);
+  r = await applyHubMeta("hfa", hubCard(HE({ what: "Hub text.", kind: "synth", image: "c.png" }, "fw/cards/h2.png", "bbbb2222")), () => {}, fetchImg);
+  c = readMeta().firmwares.hfa;
+  assert.equal(c.category, "Synth"); assert.equal(c.editor, undefined); assert.equal(c.hub_meta.sha, "bbbb2222");
+  assert.equal(c.hub_meta.image.sha256, (await import("../lib/authormeta.js")).sha256(png(300, 300)));
+  r = await applyHubMeta("hfa", hubCard(HE({ what: "Hub text.", kind: "synth", image: "c.png" }, "fw/cards/h2.png", "bbbb2222")), () => {}, fetchImg);
+  assert.equal(r.changed, false);
+});
+await ok("hub: an owner edit of a Hub field becomes an override and is kept", async () => {
+  setMeta("hfa", { category: "Chords" });
+  assert.deepEqual(readMeta().firmwares.hfa.overrides, ["category"]);
+  await applyHubMeta("hfa", hubCard(HE({ kind: "drums", image: "c.png" }, "fw/cards/h2.png", "bbbb2222")), () => {}, fetchImg);
+  assert.equal(readMeta().firmwares.hfa.category, "Chords");
+});
+await ok("hub: a non-square Hub image is skipped; an owner image is never replaced", async () => {
+  setImage("hfb", png(512, 512));
+  const r = await applyHubMeta("hfb", hubCard(HE({ image: "x.png", what: "W" }, "fw/cards/h1.png")), () => {}, fetchImg);
+  assert.equal(readMeta().firmwares.hfb.hub_meta.image, undefined);
+  await applyHubMeta("hfc", hubCard(HE({ image: "x.png" }, "fw/cards/bad.png")), () => {}, fetchImg);
+  assert.equal(readMeta().firmwares.hfc, undefined);
+  assert.ok(r.notes.every((n) => !n.startsWith("image:")));
+});
+await ok("hub: the author's RemoteFM1Metadata.json replaces Hub-filled values (not kept as overrides)", async () => {
+  await applyHubMeta("hfd", hubCard(HE({ what: "Hub text.", kind: "drums", image: "c.png" }, "fw/cards/h1.png")), () => {}, fetchImg);
+  applyAuthorMeta("hfd", { found: true, commit: "c".repeat(40), card: { what: "Author text." }, image: { path: "docs/c.png", type: "png", w: 256, h: 256, buf: png(256, 256), sha256: (await import("../lib/authormeta.js")).sha256(png(256, 256)) }, skin: null, labels: null, warnings: [] });
+  const c = readMeta().firmwares.hfd;
+  assert.equal(c.what, "Author text."); assert.equal(c.overrides, undefined); assert.equal(c.category, "Drums");
+  assert.deepEqual(c.hub_meta.fields, { category: "Drums" }); assert.equal(c.hub_meta.image, undefined);
+  assert.equal(c.author_meta.image.file, "images/hfd.png");
+  await applyHubMeta("hfd", hubCard(HE({ what: "Hub text.", kind: "drums", image: "c.png" }, "fw/cards/h1.png")), () => {}, fetchImg);
+  assert.equal(readMeta().firmwares.hfd.what, "Author text.");
+  assert.equal(readMeta().firmwares.hfd.author_meta.image.file, "images/hfd.png");
+});
+
 console.log(`\n${pass} passed${process.exitCode ? ", some FAILED" : ""} (scratch: ${T})`);

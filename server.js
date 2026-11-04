@@ -9,7 +9,8 @@ import { catalog, upstreamLatest, scanGlue, ghSlug } from "./lib/catalog.js";
 import { startJob, getJob, listJobs, view } from "./lib/jobs.js";
 import { buildCore, glueOnDisk } from "./lib/build.js";
 import { addFirmware, detect, existingCore } from "./lib/addfw.js";
-import { readMeta, setMeta, setImage, imagePath, importRemoteFM1, applyAuthorMeta, clearOverride, SCHEMA_MD } from "./lib/meta.js";
+import { readMeta, setMeta, setImage, imagePath, importRemoteFM1, applyAuthorMeta, applyHubMeta, clearOverride, SCHEMA_MD } from "./lib/meta.js";
+import { hubCatalog, hubEntryFor, hubCard } from "./lib/hub.js";
 import { readAuthorMeta, gitSource, summary as authorSummary } from "./lib/authormeta.js";
 import { readPins, setPin } from "./lib/target.js";
 import { readReadme, saveReadme, refreshReadme } from "./lib/readme.js";
@@ -136,6 +137,22 @@ route("POST", /^\/api\/meta\/([a-z0-9_]+)\/author-read$/, async (req, q, [, id])
   const r = await readAuthorMeta(dir, sha);
   const applied = applyAuthorMeta(id, r);
   return { read: authorSummary(r), applied, card: readMeta().firmwares[id] || null };
+});
+// the Hub's fmhub.json as a fallback for every built firmware's card (or body.ids): fills only free fields
+route("POST", /^\/api\/meta\/hub-fill$/, async (req) => {
+  const b = await json(req);
+  const hub = await hubCatalog(true);
+  if (!hub.firmwares?.length) throw Object.assign(new Error(`the Hub's catalog could not be read: ${(hub.errors || []).join("; ")}`), { status: 502 });
+  const cores = Object.values((await scanGlue()).cores).filter((c) => c.rfm1);
+  const want = Array.isArray(b.ids) ? new Set(b.ids) : null, report = {};
+  for (const c of cores) {
+    const id = c.id;
+    if (want && !want.has(id)) continue;
+    const notes = [];
+    const r = await applyHubMeta(id, hubCard(hubEntryFor(hub, id, ghSlug(c.url))), (n) => notes.push(n));
+    if (r.changed || notes.length) report[id] = notes;
+  }
+  return { from: hub.from, updated: hub.updated, changed: report };
 });
 route("POST", /^\/api\/meta\/([a-z0-9_]+)\/clear-override$/, async (req, q, [, id]) => {
   const { field } = await json(req);
