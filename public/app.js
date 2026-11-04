@@ -42,8 +42,13 @@ function renderCatalog(up) {
     const ghCell = u?.tag ? `<code>${esc(u.tag)}</code> <span class="mut">${esc((u.sha || "").slice(0, 7))} (GitHub ${esc(u.source)})</span>` : `<span class="warn">${esc(u?.error || "?")}</span>`;
     const hubCell = !h ? "" : h.ok ? `<br><code>${esc(h.raw)}</code> <span class="mut">${esc((h.sha || "").slice(0, 7))} (hub release)</span>`
       : h.raw ? `<br><span class="mut" title="${esc(h.reason || "")}">hub ${esc(h.raw)}${h.reason && !/not newer/.test(h.reason) ? " (not used)" : ""}</span>` : "";
-    const upCell = !up ? '<span class="mut">—</span>' : ghCell + hubCell;
-    const src = f.update ? (f.update.source === "hub" ? "hub release" : `GitHub ${f.update.source}`) : "";
+    // the author's target (their RemoteFM1Metadata.json) and the owner's pin (pins.json), with the pick's warnings
+    const pw = (f.pickWarnings || []).join("\n");
+    const tgtCell = !up ? "" : (f.authorTarget ? `<br><span class="${pw ? "warn" : "mut"}" title="${esc(pw)}">author's target: <code>${esc(f.authorTarget)}</code></span>` : pw ? `<br><span class="warn" title="${esc(pw)}">pick warnings</span>` : "")
+      + (f.ownerPin ? `<br><span class="pill warn">owner: ${esc(f.ownerPin.tag || (f.ownerPin.ignoreTarget ? "ignore target" : "") || (f.ownerPin.allowDowngrade ? "allow downgrade" : ""))}</span>` : "")
+      + (f.glue?.rfm1 ? ` <button class="mini" data-pin="${esc(f.id)}" title="the owner's pin: a tag, 'ignore' (the author's target) or 'downgrade' (allow it); empty clears">pin…</button>` : "");
+    const upCell = !up ? '<span class="mut">—</span>' : ghCell + hubCell + tgtCell;
+    const src = f.update ? (f.update.source === "hub" ? "hub release" : f.update.source === "target" ? "author's target" : f.update.source === "owner" ? "owner's pin" : `GitHub ${f.update.source}`) : "";
     const flag = !up ? "" : f.updateAvailable ? `<span class="pill warn" title="${esc(f.update.version)} at ${esc(f.update.sha.slice(0, 7))}">update: ${esc(f.update.version)}</span><br><span class="mut">${esc(src)}</span>` : f.pinMatchesStable ? '<span class="pill ok">at stable</span>' : u?.tag ? '<span class="pill mut">pin ≠ tag</span>' : "";
     const pinOk = f.glue?.pin && f.releaseCommit && f.glue.pin.startsWith(f.releaseCommit) ? "" : f.releaseCommit ? ' <span class="warn" title="the release file was built from another commit">≠ release</span>' : "";
     return `<tr>
@@ -58,6 +63,13 @@ function renderCatalog(up) {
   }).join("");
   tb.querySelectorAll("button[data-b]").forEach((b) => b.onclick = () => startBuild(b.dataset.b, false));
   tb.querySelectorAll("button[data-u]").forEach((b) => b.onclick = () => startBuild(b.dataset.u, true));
+  tb.querySelectorAll("button[data-pin]").forEach((b) => b.onclick = async () => {
+    const f = CAT.firmwares.find((x) => x.id === b.dataset.pin), o = f.ownerPin || {};
+    const v = prompt(`Owner's pin for ${f.id}: a tag to build (wins over everything), "ignore" (the manager's own pick, not the author's target), "downgrade" (allow the author's older target), or empty to clear`, o.tag || (o.ignoreTarget ? "ignore" : o.allowDowngrade ? "downgrade" : ""));
+    if (v === null) return;
+    const t = v.trim(), body = t === "ignore" ? { ignoreTarget: true } : t === "downgrade" ? { allowDowngrade: true } : t ? { tag: t } : {};
+    try { await api(`/api/pins/${f.id}`, { method: "PUT", body }); loadCatalog(true, true); } catch (e) { alert(e.message); }
+  });
 }
 async function startBuild(id, update) {
   try { const j = await api("/api/build", { method: "POST", body: { id, update } }); openJobTab(j.id); }
@@ -180,6 +192,22 @@ $("#meta-sort").value = metaPref("sort", "name");
 $("#meta-filter").onchange = () => { metaSave("filter", $("#meta-filter").value); loadMeta(); };
 $("#meta-sort").onchange = () => { metaSave("sort", $("#meta-sort").value); loadMeta(); };
 const META_NEEDED = ["image", "what", "tag", "category"];
+// where a card field's value comes from: the author's RemoteFM1Metadata.json, the owner's override of it, or the owner
+function origin(e, k) {
+  const am = e.author_meta, ov = (e.overrides || []).includes(k), hasA = !!am && k in (am.fields || {});
+  if (ov) return `<span class="pill warn" title="${hasA ? esc(`the author file says: ${am.fields[k]}`) : "set by hand"}">override</span>${hasA || (k === "image" && am?.fields?.image) ? ` <button class="mini" data-clear="${k}" title="use the author's value">use author's</button>` : ""}`;
+  if (hasA) return `<span class="pill ok">author</span>`;
+  return e[k] !== undefined ? `<span class="pill mut">owner</span>` : "";
+}
+function authorLine(e) {
+  const am = e.author_meta;
+  if (!am) return `<div class="mut">author file: none <button class="mini" data-reread>Read again</button></div>`;
+  const lab = am.labels ? `${am.labels.buttons} buttons, ${am.labels.knobs} knobs` : "none";
+  const w = am.warnings || [];
+  return `<div class="mut">author file at <code>${esc((am.commit || "").slice(0, 10))}</code> · skin: ${am.skin ? "yes" : "no"} · labels: ${esc(lab)}
+    <button class="mini" data-reread>Read again</button>
+    ${w.length ? `<details><summary class="warn">${w.length} warning${w.length > 1 ? "s" : ""}</summary><ul class="warns">${w.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}</div>`;
+}
 
 async function loadMeta() {
   if (!CAT) await loadCatalog(false);
@@ -204,9 +232,10 @@ async function loadMeta() {
         <div><b>${esc(f.name)}</b> <span class="mut">${esc(f.id)} ${esc(f.version || "")}</span>
           ${when ? `<br><span class="mut">updated ${esc(when)}</span>` : ""}
           ${miss.length ? `<br><span class="warn">missing: ${miss.map((k) => k === "image" ? "thumbnail" : k === "what" ? "description" : k).join(", ")}</span>` : ""}
-          <br><input type="file" accept="image/png,image/jpeg,image/webp"></div></div>
-      <label class="mut">description (shown in RemoteFM1 when selected)<textarea data-k="what" rows="5">${esc(e.what || "")}</textarea></label>
-      ${F.map((k) => `<label class="mut">${L[k] || k} <input data-k="${k}" value="${esc(e[k] || "")}"></label>`).join("")}
+          <br><input type="file" accept="image/png,image/jpeg,image/webp"> ${origin(e, "image")}</div></div>
+      ${authorLine(e)}
+      <label class="mut">description (shown in RemoteFM1 when selected) ${origin(e, "what")}<textarea data-k="what" rows="5">${esc(e.what || "")}</textarea></label>
+      ${F.map((k) => `<label class="mut">${L[k] || k} ${origin(e, k)} <input data-k="${k}" value="${esc(e[k] || "")}"></label>`).join("")}
       <label class="mut"><input type="checkbox" data-k="beta"${e.beta ? " checked" : ""}> beta</label>
       <div class="bar"><button data-save>Save</button>${testLink(`/rfm1m/open/${f.id}`, "Capture from RemoteFM1")}<span class="mut" data-msg></span></div></div>`;
   }).join("");
@@ -215,7 +244,19 @@ async function loadMeta() {
     c.querySelector("[data-save]").onclick = async () => {
       const body = {};
       c.querySelectorAll("[data-k]").forEach((i) => body[i.dataset.k] = i.type === "checkbox" ? i.checked : i.value);
-      try { await api(`/api/meta/${id}`, { method: "PUT", body }); msg.textContent = "saved"; } catch (e) { msg.textContent = e.message; }
+      try { await api(`/api/meta/${id}`, { method: "PUT", body }); msg.textContent = "saved"; loadMeta(); } catch (e) { msg.textContent = e.message; }
+    };
+    c.querySelectorAll("[data-clear]").forEach((b) => b.onclick = async (ev) => {
+      ev.preventDefault();
+      try { await api(`/api/meta/${id}/clear-override`, { method: "POST", body: { field: b.dataset.clear } }); loadMeta(); } catch (e) { msg.textContent = e.message; }
+    });
+    c.querySelector("[data-reread]").onclick = async () => {
+      msg.textContent = "reading...";
+      try {
+        const r = await api(`/api/meta/${id}/author-read`, { method: "POST", body: {} });
+        msg.textContent = r.read.found ? `read at ${r.read.commit.slice(0, 10)}${r.applied.notes.length ? ": " + r.applied.notes.join("; ") : ": no change"}` : `no RemoteFM1Metadata.json at ${r.read.commit.slice(0, 10)}`;
+        if (r.applied.changed) setTimeout(loadMeta, 1500);
+      } catch (e) { msg.textContent = e.message; }
     };
     c.querySelector('input[type="file"]').onchange = async (ev) => {
       const f = ev.target.files[0]; if (!f) return;

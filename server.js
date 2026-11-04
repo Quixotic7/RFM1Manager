@@ -7,9 +7,11 @@ import { join, extname, normalize } from "node:path";
 import { cfg, APP, run } from "./lib/util.js";
 import { catalog, upstreamLatest, scanGlue, ghSlug } from "./lib/catalog.js";
 import { startJob, getJob, listJobs, view } from "./lib/jobs.js";
-import { buildCore } from "./lib/build.js";
+import { buildCore, glueOnDisk } from "./lib/build.js";
 import { addFirmware, detect, existingCore } from "./lib/addfw.js";
-import { readMeta, setMeta, setImage, imagePath, importRemoteFM1, SCHEMA_MD } from "./lib/meta.js";
+import { readMeta, setMeta, setImage, imagePath, importRemoteFM1, applyAuthorMeta, clearOverride, SCHEMA_MD } from "./lib/meta.js";
+import { readAuthorMeta, gitSource, summary as authorSummary } from "./lib/authormeta.js";
+import { readPins, setPin } from "./lib/target.js";
 import { readReadme, saveReadme, refreshReadme } from "./lib/readme.js";
 import { collectFiles, stage, readPreview, publish } from "./lib/publish.js";
 import { siteStatus, refreshSite, siteFile, ensureSiteCurrent } from "./lib/site.js";
@@ -68,6 +70,9 @@ route("POST", /^\/api\/build-all$/, async (req) => {
   }, { exclusive: true, bundle: false });
   return { ...view(j), ids: list };
 });
+// the owner's pins (lib/target.js): { tag } / { ignoreTarget } / { allowDowngrade }; {} clears
+route("GET", /^\/api\/pins$/, () => readPins());
+route("PUT", /^\/api\/pins\/([a-z0-9_]+)$/, async (req, q, [, id]) => ({ id, pin: setPin(id, await json(req)) }));
 route("GET", /^\/api\/jobs$/, () => listJobs());
 route("GET", /^\/api\/jobs\/(\d+)$/, (req, q, [, id]) => {
   const j = getJob(id);
@@ -114,6 +119,32 @@ route("GET", /^\/api\/meta\/updated$/, async () => {
 route("POST", /^\/api\/meta-import$/, async (req) => { const b = await json(req); return importRemoteFM1((await catalog()).firmwares.map((f) => f.id), !!b.overwrite); });
 route("PUT", /^\/api\/meta\/([a-z0-9_]+)$/, async (req, q, [, id]) => setMeta(id, await json(req)));
 route("POST", /^\/api\/meta\/([a-z0-9_]+)\/image$/, async (req, q, [, id]) => setImage(id, await body(req, 1048576 + 1)));
+// the firmware's own RemoteFM1Metadata.json: its submodule in the manager worktree (checked out by a build)
+async function firmwareRepo(id) {
+  const core = await glueOnDisk(cfg.worktree, id);
+  if (!core?.submodule) throw Object.assign(new Error(`no glue with a submodule for ${id}`), { status: 404 });
+  const dir = join(cfg.worktree, core.submodule);
+  if (!existsSync(join(dir, ".git"))) throw Object.assign(new Error(`${core.submodule} is not checked out: build ${id} once`), { status: 409 });
+  return { core, dir };
+}
+// read it again now (at the submodule's checked-out commit, the one last built, or body.commit) and update the card
+route("POST", /^\/api\/meta\/([a-z0-9_]+)\/author-read$/, async (req, q, [, id]) => {
+  const b = await json(req);
+  const { dir } = await firmwareRepo(id);
+  const sha = (await run("git", ["-C", dir, "rev-parse", "--verify", "-q", `${b.commit || "HEAD"}^{commit}`])).out.trim();
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw Object.assign(new Error(`no commit ${b.commit || "HEAD"} in ${dir}`), { status: 400 });
+  const r = await readAuthorMeta(dir, sha);
+  const applied = applyAuthorMeta(id, r);
+  return { read: authorSummary(r), applied, card: readMeta().firmwares[id] || null };
+});
+route("POST", /^\/api\/meta\/([a-z0-9_]+)\/clear-override$/, async (req, q, [, id]) => {
+  const { field } = await json(req);
+  return clearOverride(id, String(field || ""), async (commit, path) => {
+    const f = await gitSource((await firmwareRepo(id)).dir, commit)(path, 1048576);
+    if (f.error) throw new Error(`${path} at ${commit.slice(0, 12)}: ${f.error}`);
+    return f.buf;
+  });
+});
 route("GET", /^\/api\/meta\/(images\/[a-z0-9_]+\.(?:png|jpg|webp))$/, (req, q, [, rel], res) => {
   const p = imagePath(rel);
   if (!p || !existsSync(p)) throw Object.assign(new Error("not found"), { status: 404 });

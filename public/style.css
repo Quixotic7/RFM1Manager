@@ -42,3 +42,5 @@ textarea { font: 12px/1.4 ui-monospace, Menlo, monospace; }
 .danger { border: 2px solid var(--bad); border-radius: 8px; padding: 10px; margin: 10px 0; max-width: 760px; }
 .hidden { display: none; }
 .hint { color: var(--mut); }
+button.mini { padding: 0 6px; font-size: 12px; }
+.warns { margin: 4px 0; padding-left: 18px; font-size: 12px; }

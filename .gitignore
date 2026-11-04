@@ -8,3 +8,4 @@ logs/
 .server-*.pid
 config.json
 .DS_Store
+pins.json
