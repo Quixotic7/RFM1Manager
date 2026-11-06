@@ -14,7 +14,7 @@ import { hubCatalog, hubEntryFor, hubCard } from "./lib/hub.js";
 import { readAuthorMeta, gitSource, summary as authorSummary } from "./lib/authormeta.js";
 import { readPins, setPin } from "./lib/target.js";
 import { readReadme, saveReadme, refreshReadme } from "./lib/readme.js";
-import { collectFiles, stage, readPreview, publish } from "./lib/publish.js";
+import { collectFiles, stage, readPreview, publish, initCurrent, ROLLING } from "./lib/publish.js";
 import { siteStatus, refreshSite, siteFile, ensureSiteCurrent } from "./lib/site.js";
 
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -190,6 +190,15 @@ route("POST", /^\/api\/publish$/, async (req) => {
   const dryRun = a.dryRun !== false;
   if (!dryRun && (a.confirm !== a.tag || !a.tag)) throw Object.assign(new Error("type the tag to confirm a real publish"), { status: 400 });
   const j = startJob("publish", `publish-${dryRun ? "dryrun-" : ""}${a.tag}`, (job) => publish({ ...a, dryRun, log: job.log }), { exclusive: true });
+  return view(j);
+});
+// the one-time switch-over to the rolling release: `current` made from the newest full dated release ({from});
+// dryRun (default) reads and lists, a real one needs confirm: "current"
+route("POST", /^\/api\/release\/init-current$/, async (req) => {
+  const a = await json(req);
+  const dryRun = a.dryRun !== false;
+  if (!dryRun && a.confirm !== ROLLING) throw Object.assign(new Error(`type "${ROLLING}" to confirm the switch-over`), { status: 400 });
+  const j = startJob("publish", `init-current-${dryRun ? "dryrun-" : ""}${a.from}`, (job) => initCurrent({ from: a.from, confirm: a.confirm, dryRun, log: job.log }), { exclusive: true });
   return view(j);
 });
 

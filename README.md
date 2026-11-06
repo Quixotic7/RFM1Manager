@@ -53,8 +53,10 @@ another branch.
 ## Features
 
 ### 1. Catalog
-`GET /api/catalog[?upstream=1&force=1]`. Merges the latest RemoteFM1FW release (`gh release view`; assets downloaded
-once into `cache/` and each manifest read from its `rfm1` custom section), the README table, and FM1VST's glue
+`GET /api/catalog[?upstream=1&force=1]`. Merges the latest RemoteFM1FW release (`gh release view`: the rolling
+release `current`, section 7; assets downloaded into `cache/release/<tag>/` and fetched again when their SHA-256 is
+not the asset's digest, files the release no longer has moved aside; each manifest read from its `rfm1` custom
+section), the README table, and FM1VST's glue
 (every `fm1_add_core` / `fm1_add_rfm1` in `core-glue/**.cmake` on the manager branch, else the base branch: family,
 glue version, licence, `GATED`, `HOSTED_DESPITE_GATE`, `AUTHORS`, the submodule from `.gitmodules` and its pinned
 commit from the tree). "Check upstream" asks GitHub for each repository's latest **stable** release
@@ -199,19 +201,52 @@ whose tip it is. Everything outside the markers is the owner's text. The table i
 released (the release's, replaced by `out/`).
 
 ### 7. Publish
+RemoteFM1FW has two kinds of release (owner, 2026-11-06), so a publish no longer uploads every file again:
+- **`current`**, the rolling release: always **Latest**, it holds the full set, every current `.rfm1` + `SHA256SUMS`
+  (all files). What the iOS / Android apps (`releases/latest`) and the site (`fetch_fw_catalog.mjs`) read. A publish
+  updates it in place; its title names the last dated release, its notes are that release's plus a line saying
+  `current` always holds the full set. The tag itself stays at the commit of the switch-over.
+- **a dated release per publish** (the tag you give, e.g. `2026-11-06f`), never Latest (`--latest=false`): only the
+  files that publish added or updated, a `SHA256SUMS` of just those, and the release notes. The history: the apps'
+  "older versions" page reads every release, and a version is in the dated release where it first came out.
+
 `POST /api/stage {tag, notes?, exclude?}` copies every file to release into `staging/<tag>/` and writes
-`SHA256SUMS`, `RELEASE-NOTES.md` (generated if empty: added / updated / removed against the latest release) and
-`README.preview.md`, and returns the preview (files, sizes, SHA-256, origin, licence, source, what changed, problems).
+`SHA256SUMS` (the full set), `dated/SHA256SUMS` (the files new or changed against the latest release's `SHA256SUMS`,
+by name + SHA-256), `RELEASE-NOTES.md` (generated if empty: added / updated / removed against the latest release),
+`CURRENT-NOTES.md` (the same + the `current` line) and `README.preview.md`, and returns the preview (files, sizes,
+SHA-256, origin, licence, source, what changed, `dated`, `removed`, problems). The tag `current` is refused.
 It **refuses**: anything that is not `<id>-<version>.rfm1` (raw `.syx` / preset sources and every other file type, in
 `out/` or staging); a name not matching its manifest; a manifest without licence texts, authors or `source_url` at a
 commit; a GATED core without `HOSTED_DESPITE_GATE`; a built file whose FM1VST glue commit is not on FM1VST's remote
 (its `glue_url` must be public, GPL); a tag that already exists.
-`POST /api/publish {tag, dryRun: true}` (the default) re-checks the staged files against the preview's hashes and
-returns the exact plan (copy README, `git add README.md catalog`, commit, push, `gh release create … --notes-file …`)
-without running it. A real publish needs `dryRun: false` **and** `confirm` equal to the tag (the UI shows the confirm
-box only for a preview without problems, enables the button only when the typed text equals the tag, then asks once
-more), no problems, RemoteFM1FW on `main`; it then commits README + catalog, pushes (big `http.postBuffer`), and runs
-`gh release create`.
+`POST /api/publish {tag, dryRun: true}` (the default) re-checks the staged files against the preview's hashes, reads
+`current` as it is now (its assets with their digests, its `SHA256SUMS`; read only) and returns the exact plan without
+running it. A real publish needs `dryRun: false` **and** `confirm` equal to the tag (the UI shows the confirm box only
+for a preview without problems, enables the button only when the typed text equals the tag, then asks once more), no
+problems, RemoteFM1FW on `main`, and `current` as the stage saw it (or already at the staged set: a re-run after a
+failure). It then runs, in this order:
+1. copy README, `git add README.md catalog docs`, commit, push (big `http.postBuffer`);
+2. `gh release upload current <new and changed .rfm1> --clobber`;
+3. `gh release upload current SHA256SUMS --clobber` (the full set);
+4. `gh release delete-asset current <file> --yes` for every asset not in the set (renamed versions, removed firmwares);
+5. check: every asset of `current` against `SHA256SUMS` (the same `.rfm1` names, each SHA-256 digest equal; an asset
+   without a digest is downloaded and hashed): the site rejects the whole release on any mismatch;
+6. `gh release create <tag> --latest=false --notes-file RELEASE-NOTES.md <dated files> dated/SHA256SUMS` (no files
+   when nothing was added or updated; skipped when the tag exists from an earlier try of this publish);
+7. `gh release edit current --title <tag> --notes-file CURRENT-NOTES.md --latest`;
+8. check: the Latest release is `current`.
+
+Readers see a partial state only between steps 2 and 4 (a new file not yet in `SHA256SUMS`, then a stale file not in
+it any more): seconds. Each step is safe to run again: a failed publish is run again as it is.
+
+**The switch-over** (once, before the first publish of this kind; a publish refuses until `current` exists):
+`POST /api/release/init-current {from: "<newest dated tag>", dryRun: true}` (the default: reads and lists), then with
+`dryRun: false, confirm: "current"`; or `node tools/init-current.mjs --from <tag> [--confirm current]`. It downloads
+`from`'s assets into `cache/release/<from>/`, checks every `.rfm1` against its `SHA256SUMS` (anything else refused),
+runs `gh release create current --title <from> --target main --latest <every .rfm1> SHA256SUMS` (gh makes it a draft,
+uploads, then publishes) and checks it as in steps 5 and 8. Run again it does nothing when `current` already holds
+that set and is Latest, finishes a `current` a failed run left (titled `from`, or a draft), and refuses a `current`
+that holds another set.
 
 ### 8. Test in RemoteFM1 + thumbnail capture
 The manager serves its own copy of the RemoteFM1 site (remotefm1.com can't load files from localhost): `origin/main`

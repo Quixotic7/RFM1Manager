@@ -304,7 +304,7 @@ $("#pb-stage").onclick = async () => {
   try {
     PV = await api("/api/stage", { method: "POST", body: { tag, notes: $("#pb-notes").value, exclude: $("#pb-exclude").value.split(",").map((s) => s.trim()).filter(Boolean) } });
     const total = PV.files.reduce((a, f) => a + f.size, 0);
-    $("#pb-prev").innerHTML = `<h2>Preview: ${esc(PV.tag)} on ${esc(PV.repo)} (previous ${esc(PV.previous)}) — ${PV.files.length} files, ${fmtSize(total)}</h2>
+    $("#pb-prev").innerHTML = `<h2>Preview: ${esc(PV.tag)} on ${esc(PV.repo)} (previous ${esc(PV.previous)}) — ${PV.files.length} files, ${fmtSize(total)}${PV.dated ? `; the dated release gets ${PV.dated.length}${PV.removed?.length ? `, ${PV.removed.length} leave current` : ""}` : ""}</h2>
       ${PV.problems.length ? `<div class="danger"><b class="bad">Problems (publish is blocked):</b><ul>${PV.problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>` : '<p class="ok">No problems found.</p>'}
       <table><thead><tr><th>File</th><th>Size</th><th>SHA-256</th><th>From</th><th>Licence</th><th>Source</th><th></th></tr></thead><tbody>
       ${PV.files.map((f) => `<tr><td><code>${esc(f.file)}</code>${f.hosted ? ' <span class="pill warn">hosted only</span>' : ""}${f.virtual ? ' <span class="pill">Fantasy CFW</span>' : ""}</td><td>${fmtSize(f.size)}</td><td><code>${esc(f.sha256)}</code></td><td>${esc(f.origin)}</td><td>${esc(f.license)} (${f.licenses} texts)</td><td><code>${esc(f.source_url)}</code></td><td>${f.changed ? '<span class="pill warn">new/changed</span>' : ""} ${testLink(testUrl(`/files/staging/${PV.tag}/${f.file}`, f.id), "Test")}</td></tr>`).join("")}

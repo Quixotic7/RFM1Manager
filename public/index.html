@@ -93,7 +93,7 @@
     </div>
     <div id="pb-prev"></div>
     <div id="pb-confirm" class="danger hidden">
-      <p>Real publish: commits + pushes RemoteFM1FW and runs <code>gh release create</code>. Type the tag to confirm.</p>
+      <p>Real publish: commits + pushes RemoteFM1FW, updates the rolling release <code>current</code> in place (new and changed files, SHA256SUMS, stale files deleted, Latest) and creates the dated release with only the added and updated files. Type the tag to confirm.</p>
       <input id="pb-confirm-tag" size="20"> <button id="pb-go" disabled>Publish release</button>
     </div>
     <pre id="pb-out"></pre>
