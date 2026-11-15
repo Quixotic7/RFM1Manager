@@ -230,8 +230,21 @@ route("GET", /^\/rfm1m\/open\/([a-z0-9_]+)$/, async (req, q, [, id], res) => {
   res.end();
 });
 
+// Only this machine's own pages: a Host of the manager's own address (no DNS rebinding), and no request that changes
+// anything from another site (a page open in the browser could otherwise POST a build or a publish to localhost)
+const OWN_HOSTS = new Set([`127.0.0.1:${cfg.port}`, `localhost:${cfg.port}`, `[::1]:${cfg.port}`]);
+function refusal(method, h) {
+  if (!OWN_HOSTS.has(String(h.host || "").toLowerCase())) return "Host is not the manager's own address";
+  if (method === "GET" || method === "HEAD") return null;
+  if (h.origin !== undefined && !OWN_HOSTS.has(String(h.origin).toLowerCase().replace(/^http:\/\//, ""))) return "a request from another site";
+  if (h["sec-fetch-site"] && !["same-origin", "none"].includes(h["sec-fetch-site"])) return "a request from another site";
+  return null;
+}
+
 const server = createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
+  const no = refusal(req.method, req.headers);
+  if (no) return send(res, 403, { error: `refused: ${no}` });
   try {
     for (const r of routes) {
       const m = r.method === req.method && r.re.exec(u.pathname);

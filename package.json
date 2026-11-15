@@ -1,1 +1,1 @@
-{"type":"module","name":"rfm1manager","version":"0.1.0","private":true,"scripts":{"start":"node server.js"}}
+{"type":"module","name":"rfm1manager","version":"0.1.0","private":true,"license":"GPL-3.0-only","scripts":{"start":"node server.js"}}
