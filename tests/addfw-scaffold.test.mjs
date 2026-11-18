@@ -37,3 +37,20 @@ test("a template's GATED is not copied", () => {
   assert.doesNotMatch(g.text, /GATED/);
   assert.match(g.text, /LICENSE MIT\n\s+CREDITS/);
 });
+
+import { pruneCreditsFiles } from "../lib/addfw.js";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+test("the template's CREDITS_FILES the new firmware lacks are left out", () => {
+  const sub = mkdtempSync(join(tmpdir(), "cf-"));
+  mkdirSync(join(sub, "LICENSES"));
+  writeFileSync(join(sub, "LICENSES/MIT-Own.txt"), "x");
+  const t = `fm1_add_core(x SOURCE \${_x}\n             CREDITS_FILES LICENSES/MIT-Rings.txt LICENSES/MIT-Own.txt\n             GEN a.h)`;
+  const r = pruneCreditsFiles(t, sub);
+  assert.deepEqual(r.dropped, ["LICENSES/MIT-Rings.txt"]);
+  assert.match(r.text, /CREDITS_FILES LICENSES\/MIT-Own\.txt\n\s+GEN a\.h/);
+  const none = pruneCreditsFiles(t.replace("LICENSES/MIT-Own.txt", "LICENSES/OFL.txt"), sub);
+  assert.doesNotMatch(none.text, /CREDITS_FILES/);
+  assert.match(none.text, /SOURCE \$\{_x\}\n\s+GEN a\.h/);
+});

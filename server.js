@@ -6,7 +6,7 @@ import { readFileSync, existsSync, readdirSync, statSync, writeFileSync } from "
 import { join, extname, normalize } from "node:path";
 import { cfg, APP, run } from "./lib/util.js";
 import { catalog, upstreamLatest, scanGlue, ghSlug } from "./lib/catalog.js";
-import { startJob, getJob, listJobs, view } from "./lib/jobs.js";
+import { startJob, getJob, listJobs, view, cancelJob } from "./lib/jobs.js";
 import { buildCore, glueOnDisk } from "./lib/build.js";
 import { addFirmware, detect, existingCore } from "./lib/addfw.js";
 import { readMeta, setMeta, setImage, imagePath, importRemoteFM1, applyAuthorMeta, applyHubMeta, clearOverride, SCHEMA_MD } from "./lib/meta.js";
@@ -50,7 +50,7 @@ route("GET", /^\/api\/upstream\/([a-z0-9_]+)$/, async (req, q, [, id]) => {
 route("POST", /^\/api\/build$/, async (req) => {
   const { id, update = false } = await json(req);
   if (!/^[a-z0-9_]{1,31}$/.test(id || "")) throw Object.assign(new Error("bad id"), { status: 400 });
-  const j = startJob("build", `${update ? "update" : "rebuild"}-${id}`, (job) => buildCore(job, id, { update: !!update }), { exclusive: true });
+  const j = startJob("build", `${update ? "update" : "rebuild"}-${id}`, (job) => buildCore(job, id, { update: !!update }), { exclusive: true, queue: true });
   return view(j);
 });
 route("POST", /^\/api\/build-all$/, async (req) => {
@@ -68,13 +68,18 @@ route("POST", /^\/api\/build-all$/, async (req) => {
     }
     if (results.some((r) => r.status !== "ok")) job.status = "failed";
     return { results };
-  }, { exclusive: true, bundle: false });
+  }, { exclusive: true, bundle: false, queue: true });
   return { ...view(j), ids: list };
 });
 // the owner's pins (lib/target.js): { tag } / { ignoreTarget } / { allowDowngrade }; {} clears
 route("GET", /^\/api\/pins$/, () => readPins());
 route("PUT", /^\/api\/pins\/([a-z0-9_]+)$/, async (req, q, [, id]) => ({ id, pin: setPin(id, await json(req)) }));
 route("GET", /^\/api\/jobs$/, () => listJobs());
+// a queued build or add taken out of the queue (a running job is not stopped)
+route("DELETE", /^\/api\/jobs\/(\d+)$/, (req, q, [, id]) => {
+  if (!cancelJob(id)) throw Object.assign(new Error(`job ${id} is not queued`), { status: 409 });
+  return view(getJob(id));
+});
 route("GET", /^\/api\/jobs\/(\d+)$/, (req, q, [, id]) => {
   const j = getJob(id);
   if (!j) throw Object.assign(new Error("no such job"), { status: 404 });
@@ -98,7 +103,7 @@ route("POST", /^\/api\/add$/, async (req) => {
   const a = await json(req);
   if (!ghSlug(a.url)) throw Object.assign(new Error("a https://github.com/<owner>/<repo> URL"), { status: 400 });
   const mode = a.mode === "scaffold" ? "scaffold" : "detect";
-  const j = startJob("add", `add-${mode}-${ghSlug(a.url).replace("/", "_")}`, (job) => addFirmware(job, { ...a, mode }), { exclusive: mode === "scaffold" });
+  const j = startJob("add", `add-${mode}-${ghSlug(a.url).replace("/", "_")}`, (job) => addFirmware(job, { ...a, mode }), { exclusive: mode === "scaffold", queue: true });
   return view(j);
 });
 route("GET", /^\/api\/detect$/, (req, q) => detect(q.get("url")));

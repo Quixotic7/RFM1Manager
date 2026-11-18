@@ -95,11 +95,14 @@ $("#cat-update-all").onclick = async () => {
 };
 
 // ---------- jobs & logs ----------
-let follow = null;
+let follow = null, jobsTimer = null;
 function openJobTab(id) { $('#tabs button[data-tab="jobs"]').click(); watchJob(id); }
 async function loadJobs() {
   const [jobs, logs] = await Promise.all([api("/api/jobs"), api("/api/logs")]);
-  $("#job-list").innerHTML = jobs.reverse().map((j) => `<li data-j="${j.id}"><span class="${j.status === "ok" ? "ok" : j.status === "failed" ? "bad" : "warn"}">●</span> #${j.id} ${esc(j.label)} <span class="mut">${esc(j.status)}</span></li>`).join("") || '<li class="mut">none yet</li>';
+  $("#job-list").innerHTML = jobs.reverse().map((j) => `<li data-j="${j.id}"><span class="${j.status === "ok" ? "ok" : j.status === "failed" ? "bad" : "warn"}">●</span> #${j.id} ${esc(j.label)} <span class="mut">${esc(j.status)}</span>${j.status === "queued" ? ` <button class="cancel" data-c="${j.id}" title="take it out of the queue">cancel</button>` : ""}</li>`).join("") || '<li class="mut">none yet</li>';
+  $("#job-list").querySelectorAll("button[data-c]").forEach((b) => b.onclick = async (e) => { e.stopPropagation(); try { await api(`/api/jobs/${b.dataset.c}`, { method: "DELETE" }); } catch (x) { status(x.message); } loadJobs(); });
+  clearTimeout(jobsTimer);
+  if (jobs.some((j) => j.status === "running" || j.status === "queued")) jobsTimer = setTimeout(loadJobs, 3000);
   $("#log-list").innerHTML = logs.map((l) => `<li data-l="${esc(l.name)}"><span class="${l.ok ? "ok" : l.ok === false ? "bad" : "mut"}">●</span> ${esc(l.name)}</li>`).join("");
   $("#job-list").querySelectorAll("li[data-j]").forEach((li) => li.onclick = () => watchJob(li.dataset.j));
   $("#log-list").querySelectorAll("li[data-l]").forEach((li) => li.onclick = () => showBundle(li.dataset.l));
@@ -123,7 +126,7 @@ async function watchJob(id) {
     }
     const out = j.result?.out?.split("/").pop();
     if (out && j.result.manifest?.id) $("#view-files").insertAdjacentHTML("beforeend", " " + testLink(testUrl(`/files/out/${out}`, j.result.manifest.id)));
-    if (j.status === "running") follow = setTimeout(tick, 1200); else { follow = null; loadJobs(); if (j.type === "build" && CAT) loadCatalog(false); }
+    if (j.status === "running" || j.status === "queued") follow = setTimeout(tick, 1200); else { follow = null; loadJobs(); if (j.type === "build" && CAT) loadCatalog(false); }
   };
   tick();
 }
@@ -147,14 +150,20 @@ $("#copy-view").onclick = () => navigator.clipboard.writeText($("#view").textCon
 
 // ---------- add firmware ----------
 async function add(mode) {
-  const url = $("#add-url").value.trim();
-  if (!url) return;
-  if (mode === "scaffold") await checkExisting();
-  try {
-    const j = await api("/api/add", { method: "POST", body: { url, id: $("#add-id").value.trim() || undefined, mode, target: $("#add-target").value, hostedDespiteGate: $("#add-hdg").value.trim() || undefined } });
-    $("#add-out").textContent = `job #${j.id} started; following in Builds & logs`;
-    openJobTab(j.id);
-  } catch (e) { $("#add-out").textContent = "error: " + e.message; }
+  const urls = $("#add-url").value.split(/[\s,]+/).map((u) => u.trim()).filter(Boolean);
+  if (!urls.length) return;
+  const one = urls.length === 1;
+  if (one && mode === "scaffold") await checkExisting();
+  const out = [];
+  for (const url of urls) {
+    try {
+      const j = await api("/api/add", { method: "POST", body: { url, id: one ? $("#add-id").value.trim() || undefined : undefined, mode, target: $("#add-target").value, hostedDespiteGate: one ? $("#add-hdg").value.trim() || undefined : undefined } });
+      out.push(`job #${j.id} ${j.status}: ${url}`);
+      if (one) openJobTab(j.id);
+    } catch (e) { out.push(`error: ${url}: ${e.message}`); }
+  }
+  $("#add-out").textContent = out.join("\n") + (one ? "\nfollowing in Builds & logs" : "\nqueued jobs run one at a time: see Builds & logs");
+  if (!one) loadJobs();
 }
 // a repository that is already a core in FM1VST is never scaffolded as a copy: Add enables it as .rfm1 + updates it
 let addExisting = null, addTimer = null;
@@ -319,7 +328,7 @@ async function runPublish(dryRun) {
   const tag = $("#pb-tag").value.trim();
   try {
     const j = await api("/api/publish", { method: "POST", body: { tag, dryRun, confirm: dryRun ? undefined : $("#pb-confirm-tag").value } });
-    const poll = async () => { const v = await api(`/api/jobs/${j.id}`); $("#pb-out").textContent = `${v.status}\n` + JSON.stringify(v.result || v.error, null, 1); if (v.status === "running") setTimeout(poll, 1000); };
+    const poll = async () => { const v = await api(`/api/jobs/${j.id}`); $("#pb-out").textContent = `${v.status}\n` + JSON.stringify(v.result || v.error, null, 1); if (v.status === "running" || v.status === "queued") setTimeout(poll, 1000); };
     poll();
   } catch (e) { $("#pb-out").textContent = "error: " + e.message; }
 }
