@@ -248,6 +248,27 @@ uploads, then publishes) and checks it as in steps 5 and 8. Run again it does no
 that set and is Latest, finishes a `current` a failed run left (titled `from`, or a draft), and refuses a `current`
 that holds another set.
 
+#### The Move catalog (after a publish)
+
+RemoteFM14Move runs the catalog's firmwares on the Ableton Move: each `.rfm1` gets a native linux-aarch64 build
+(`.rfm1m`), downloaded by the Move from a signed `index.json` on the release `move-catalog` of
+`Quixotic7/remoteFM14Move`. The **Move catalog** tab (lib/move.js) drives that repository's own tools, never a copy:
+
+1. **Build**: `make catalog` in the remoteFM14Move checkout (`config.json` `moveRepo`, default `../remoteFM14Move`;
+   Docker must run). It builds only new or changed firmwares (cached per `.rfm1` sha256), checks each, signs
+   `dist/move-catalog/index.json` with the key in `~/.config/remotefm14move/` (the manager never reads or shows it,
+   only says whether it is there) and writes `dist/move-catalog-report.{md,json}`, shown in the job's log.
+2. **Dry run**: `tools/publish_move_catalog.py --dry-run`: the files the release lacks (by name + sha256).
+3. **Upload the delta** (type `move-catalog` to confirm; always the owner's call, it is public): only those files, then
+   `index.json.sig` and `index.json` back to back. **Prune** (off by default) deletes assets the new index no longer
+   names (older versions).
+
+The tab lists every firmware: its catalog version, its Move build, the version on the Move release, and its state
+(live, needs build, pending upload, left out with the reason: e.g. Elasticat and Ripple need Fantasy CFW host calls the
+Move lacks). A real publish on the Publish tab offers "Update the Move catalog". APIs: `GET /api/move`,
+`POST /api/move/build`, `POST /api/move/publish {dryRun, prune, confirm: "move-catalog"}`; one Move job at a time,
+separate from the FM1VST build lock.
+
 ### 8. Test in RemoteFM1 + thumbnail capture
 The manager serves its own copy of the RemoteFM1 site (remotefm1.com can't load files from localhost): `origin/main`
 of the RemoteFM1 repo (`git fetch origin main`, then `git archive` of `web/site`, `web/engines`, `web/remote` into

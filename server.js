@@ -16,6 +16,7 @@ import { readPins, setPin } from "./lib/target.js";
 import { readReadme, saveReadme, refreshReadme } from "./lib/readme.js";
 import { collectFiles, stage, readPreview, publish, initCurrent, ROLLING } from "./lib/publish.js";
 import { siteStatus, refreshSite, siteFile, ensureSiteCurrent } from "./lib/site.js";
+import { moveStatus, moveBuild, movePublish, moveBusy, moveLock, moveUnlock } from "./lib/move.js";
 
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json", ".md": "text/plain; charset=utf-8",
@@ -204,6 +205,24 @@ route("POST", /^\/api\/release\/init-current$/, async (req) => {
   const dryRun = a.dryRun !== false;
   if (!dryRun && a.confirm !== ROLLING) throw Object.assign(new Error(`type "${ROLLING}" to confirm the switch-over`), { status: 400 });
   const j = startJob("publish", `init-current-${dryRun ? "dryrun-" : ""}${a.from}`, (job) => initCurrent({ from: a.from, confirm: a.confirm, dryRun, log: job.log }), { exclusive: true });
+  return view(j);
+});
+
+// the Move catalog (lib/move.js): its state, make catalog (only new or changed firmwares are built), the delta upload
+// (a dry run by default; a real one needs confirm: the release's tag, as the page asks the owner every time)
+route("GET", /^\/api\/move$/, () => moveStatus());
+route("POST", /^\/api\/move\/build$/, async () => {
+  if (moveBusy()) throw Object.assign(new Error(`a Move catalog job is running (job ${moveBusy()})`), { status: 409 });
+  const j = startJob("move-build", "move-catalog-build", async (job) => { moveLock(job.id); try { return await moveBuild(job); } finally { moveUnlock(job.id); } });
+  return view(j);
+});
+route("POST", /^\/api\/move\/publish$/, async (req) => {
+  const a = await json(req);
+  const dryRun = a.dryRun !== false, prune = a.prune === true;
+  if (!dryRun && a.confirm !== "move-catalog") throw Object.assign(new Error('type "move-catalog" to confirm the upload'), { status: 400 });
+  if (moveBusy()) throw Object.assign(new Error(`a Move catalog job is running (job ${moveBusy()})`), { status: 409 });
+  const j = startJob("move-publish", `move-catalog-${dryRun ? "dryrun" : "publish"}${prune ? "-prune" : ""}`,
+    async (job) => { moveLock(job.id); try { return await movePublish(job, { dryRun, prune }); } finally { moveUnlock(job.id); } });
   return view(j);
 });
 

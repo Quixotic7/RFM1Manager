@@ -16,6 +16,7 @@
     <button data-tab="meta">Metadata</button>
     <button data-tab="readme">README</button>
     <button data-tab="publish">Publish</button>
+    <button data-tab="move">Move catalog</button>
   </nav>
   <span id="status"></span>
 </header>
@@ -97,6 +98,22 @@
       <input id="pb-confirm-tag" size="20"> <button id="pb-go" disabled>Publish release</button>
     </div>
     <pre id="pb-out"></pre>
+    <p id="pb-move" class="hint hidden">The catalog changed: <button id="pb-move-go">Update the Move catalog</button></p>
+  </section>
+
+  <section id="move" class="tab">
+    <p class="hint">The Ableton Move's builds of the catalog (<code>.rfm1m</code>), made by the remoteFM14Move checkout's
+      <code>make catalog</code> (Docker; only new or changed firmwares are built) and uploaded to its GitHub release as a
+      delta: only the files the release lacks, then the signed index. The signing key stays in
+      <code>~/.config/remotefm14move/</code>.</p>
+    <div class="bar"><button id="mv-load">Reload</button><button id="mv-build">1. Build (make catalog)</button><button id="mv-dry">2. Dry run upload</button>
+      <label class="mut"><input type="checkbox" id="mv-prune"> prune old versions</label> <span id="mv-info" class="mut"></span></div>
+    <div id="mv-confirm" class="danger hidden">
+      <p>Real upload: a public change to the Move catalog release. Type <code>move-catalog</code> to confirm.</p>
+      <input id="mv-confirm-tag" size="16"> <button id="mv-go" disabled>3. Upload the delta</button>
+    </div>
+    <pre id="mv-out"></pre>
+    <table id="mv-table"><thead><tr><th>id</th><th>Firmware</th><th>Catalog</th><th>Move build</th><th>On the Move release</th><th>State</th><th>Files to upload</th><th>Why</th></tr></thead><tbody></tbody></table>
   </section>
 </main>
 <script src="app.js"></script>

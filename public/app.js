@@ -19,7 +19,7 @@ const fmtSize = (n) => n == null ? "" : n > 1e6 ? (n / 1048576).toFixed(2) + " M
 for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => {
   document.querySelectorAll("#tabs button, .tab").forEach((x) => x.classList.remove("on"));
   b.classList.add("on"); $("#" + b.dataset.tab).classList.add("on");
-  ({ jobs: loadJobs, meta: loadMeta, readme: () => !$("#rd-text").value && loadReadme() })[b.dataset.tab]?.();
+  ({ jobs: loadJobs, meta: loadMeta, readme: () => !$("#rd-text").value && loadReadme(), move: loadMove })[b.dataset.tab]?.();
 };
 
 // ---------- catalog ----------
@@ -328,11 +328,56 @@ async function runPublish(dryRun) {
   const tag = $("#pb-tag").value.trim();
   try {
     const j = await api("/api/publish", { method: "POST", body: { tag, dryRun, confirm: dryRun ? undefined : $("#pb-confirm-tag").value } });
-    const poll = async () => { const v = await api(`/api/jobs/${j.id}`); $("#pb-out").textContent = `${v.status}\n` + JSON.stringify(v.result || v.error, null, 1); if (v.status === "running" || v.status === "queued") setTimeout(poll, 1000); };
+    const poll = async () => {
+      const v = await api(`/api/jobs/${j.id}`); $("#pb-out").textContent = `${v.status}\n` + JSON.stringify(v.result || v.error, null, 1);
+      if (v.status === "running" || v.status === "queued") setTimeout(poll, 1000);
+      else if (!dryRun && v.status === "ok") $("#pb-move").classList.remove("hidden"); // a catalog change: offer the Move catalog
+    };
     poll();
   } catch (e) { $("#pb-out").textContent = "error: " + e.message; }
 }
 $("#pb-dry").onclick = () => runPublish(true);
+
+// ---------- the Move catalog ----------
+let MV = null, mvDryOk = false;
+async function loadMove() {
+  $("#mv-info").textContent = "loading…";
+  try {
+    MV = await api("/api/move");
+    if (!MV.ok) { $("#mv-info").textContent = MV.error; return; }
+    const s = MV.summary;
+    const rel = MV.release ? (MV.release.error ? `<span class="bad">${esc(MV.release.error)}</span>` : `<a href="${esc(MV.release.url)}" target="_blank" rel="noopener">${esc(MV.tag)}</a> (${MV.release.assets} assets)`) : `<span class="warn">no release ${esc(MV.tag)} yet</span>`;
+    $("#mv-info").innerHTML = `${rel}; local build ${esc(MV.local?.generated || "none")} from catalog ${esc(MV.report?.catalog || "?")}; ` +
+      `<b>${s.needsBuild}</b> need a build, <b>${s.pendingUpload}</b> to upload (${s.pendingFiles} files, ${fmtSize(s.pendingBytes) || "0"})${s.indexPending ? ", a new index" : s.indexRestamped ? ", nothing new (the local index only has a newer timestamp: no upload needed)" : ""}, ${s.live} live, ${s.leftOut} left out` +
+      `${s.stale ? `, ${s.stale} old assets` : ""}${MV.key ? "" : ', <span class="bad">no signing key</span>'}${MV.busy ? `, job ${esc(MV.busy)} running` : ""}`;
+    const cls = { live: "ok", "left out": "bad", "needs build": "warn", "pending upload": "warn" };
+    $("#mv-table tbody").innerHTML = MV.firmwares.map((f) => `<tr><td>${esc(f.id)}</td><td>${esc(f.name)}</td><td>${esc(f.catalog || "")}</td><td>${esc(f.built || "")}</td><td>${esc(f.live || "")}</td>` +
+      `<td class="${cls[f.state] || "mut"}">${esc(f.state)}</td><td>${f.pending || ""}</td><td class="mut">${esc(f.why || "")}</td></tr>`).join("");
+  } catch (e) { $("#mv-info").textContent = "error: " + e.message; }
+}
+function moveJob(path, body, after) {
+  return api(path, { method: "POST", body }).then((j) => {
+    const poll = async () => {
+      const v = await api(`/api/jobs/${j.id}`);
+      $("#mv-out").textContent = `job #${v.id} ${v.label}: ${v.status}\n` + (v.error ? v.error + "\n" : "") + (v.result?.out || "");
+      if (v.status === "running" || v.status === "queued") setTimeout(poll, 1500); else { loadMove(); after?.(v); }
+    };
+    poll();
+  }).catch((e) => { $("#mv-out").textContent = "error: " + e.message; });
+}
+$("#mv-load").onclick = loadMove;
+$("#mv-build").onclick = () => { $("#mv-confirm").classList.add("hidden"); moveJob("/api/move/build", {}, (v) => { if (v.status === "ok") { $("#mv-out").textContent += `\nbuilt: ${v.result?.report?.passed}/${v.result?.report?.tried} passed; left out: ` + (v.result?.report?.leftOut || []).map((f) => `${f.id} (${f.why})`).join("; ") + `\nfull report: job #${v.id} in Builds & logs`; } }); };
+$("#mv-dry").onclick = () => { mvDryOk = false; moveJob("/api/move/publish", { dryRun: true, prune: $("#mv-prune").checked }, (v) => {
+  mvDryOk = v.status === "ok";
+  $("#mv-confirm").classList.toggle("hidden", !mvDryOk); $("#mv-confirm-tag").value = ""; $("#mv-go").disabled = true; }); };
+$("#mv-prune").onchange = () => { mvDryOk = false; $("#mv-confirm").classList.add("hidden"); };
+$("#mv-confirm-tag").oninput = () => { $("#mv-go").disabled = !mvDryOk || $("#mv-confirm-tag").value !== "move-catalog"; };
+$("#mv-go").onclick = () => {
+  if (!confirm(`Upload the Move catalog delta to ${MV?.gh} (${MV?.tag})${$("#mv-prune").checked ? ", deleting old versions" : ""}? This is public.`)) return;
+  $("#mv-confirm").classList.add("hidden");
+  moveJob("/api/move/publish", { dryRun: false, prune: $("#mv-prune").checked, confirm: $("#mv-confirm-tag").value });
+};
+$("#pb-move-go").onclick = () => { $('#tabs button[data-tab="move"]').click(); };
 $("#pb-go").onclick = () => { if (confirm(`Publish ${PV.tag} to ${PV.repo} now? This pushes and creates a public release.`)) runPublish(false); };
 
 loadCatalog(false);
